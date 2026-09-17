@@ -15,6 +15,7 @@ export async function GET(req: NextRequest) {
   const account = params.get("account") || undefined;
   const from = params.get("from") || undefined;
   const to = params.get("to") || undefined;
+  const q = params.get("q") || undefined;
   const offset = Number(params.get("offset") || 0);
   const limit = Number(params.get("limit") || PAGE_SIZE);
 
@@ -24,6 +25,7 @@ export async function GET(req: NextRequest) {
     account,
     from,
     to,
+    q,
     limit: limit + 1,
     offset,
   });
@@ -32,7 +34,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     transactions: rows.slice(0, limit),
     hasMore,
-    summary: await summarize(workspaceId, { category, account, from, to }),
+    summary: await summarize(workspaceId, { category, account, from, to, q }),
   });
 }
 

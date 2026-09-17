@@ -1,6 +1,7 @@
 import { and, desc, eq, gte, lt, lte, sql } from "drizzle-orm";
 import { db, ready, schema } from "./client";
 import type { AccountRow, Transaction } from "@/lib/types";
+import { toLikePattern } from "@/lib/search";
 
 function mapTransaction(row: typeof schema.transactions.$inferSelect): Transaction {
   return {
@@ -280,6 +281,7 @@ export type TransactionFilters = {
   account?: string;
   from?: string;
   to?: string;
+  q?: string;
   limit?: number;
   offset?: number;
 };
@@ -294,6 +296,16 @@ export async function listTransactions(
   if (filters.account) conditions.push(eq(schema.transactions.account, filters.account));
   if (filters.from) conditions.push(gte(schema.transactions.date, filters.from));
   if (filters.to) conditions.push(lte(schema.transactions.date, filters.to));
+  if (filters.q) {
+    // lower() both sides: LIKE is case-sensitive in Postgres but not in
+    // SQLite, so normalize for the same behavior on both dialects.
+    const pattern = toLikePattern(filters.q);
+    conditions.push(sql`(
+      lower(${schema.transactions.description}) LIKE lower(${pattern}) ESCAPE '\\' OR
+      lower(${schema.transactions.category}) LIKE lower(${pattern}) ESCAPE '\\' OR
+      lower(${schema.transactions.account}) LIKE lower(${pattern}) ESCAPE '\\'
+    )`);
+  }
 
   let query = db
     .select()
@@ -382,7 +394,7 @@ export async function updateTransaction(
 
 export async function summarize(
   workspaceId: number,
-  filters: Pick<TransactionFilters, "category" | "account" | "from" | "to"> = {}
+  filters: Pick<TransactionFilters, "category" | "account" | "from" | "to" | "q"> = {}
 ) {
   const rows = await listTransactions(workspaceId, filters);
   const income = rows.filter((r) => r.type === "income").reduce((s, r) => s + r.amount, 0);

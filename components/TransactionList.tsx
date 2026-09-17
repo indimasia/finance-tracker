@@ -19,6 +19,7 @@ export default function TransactionList({
   hasMore,
   loadingMore,
   onLoadMore,
+  searchQuery = "",
 }: {
   transactions: Transaction[];
   categories: Categories;
@@ -28,6 +29,7 @@ export default function TransactionList({
   hasMore: boolean;
   loadingMore: boolean;
   onLoadMore: () => void;
+  searchQuery?: string;
 }) {
   const [editingId, setEditingId] = useState<number | null>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -47,7 +49,11 @@ export default function TransactionList({
   }, [hasMore, onLoadMore]);
 
   if (transactions.length === 0) {
-    return <p className="text-sm text-slate-500 py-6 text-center">No transactions found.</p>;
+    return (
+      <p className="text-sm text-slate-500 py-6 text-center">
+        {searchQuery ? `No results for "${searchQuery}".` : "No transactions found."}
+      </p>
+    );
   }
 
   function handleDelete(t: Transaction) {

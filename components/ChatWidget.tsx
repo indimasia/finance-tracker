@@ -4,9 +4,11 @@ import { useState } from "react";
 import { MessageCircle, X } from "lucide-react";
 import { ICON_BTN } from "@/lib/ui";
 import ChatPanel from "@/components/ChatPanel";
+import { useWorkspace } from "@/components/WorkspaceProvider";
 
 export default function ChatWidget({ onChanged }: { onChanged: () => void }) {
   const [open, setOpen] = useState(false);
+  const { workspaceId, ready } = useWorkspace();
 
   return (
     <>
@@ -23,7 +25,13 @@ export default function ChatWidget({ onChanged }: { onChanged: () => void }) {
                 <X size={18} />
               </button>
             </div>
-            <ChatPanel onChanged={onChanged} />
+            {ready ? (
+              <ChatPanel
+                key={workspaceId}
+                workspaceId={workspaceId}
+                onChanged={onChanged}
+              />
+            ) : null}
           </div>
         </div>
       )}

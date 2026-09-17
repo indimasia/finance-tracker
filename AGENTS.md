@@ -23,7 +23,8 @@ Simple AI-assisted personal finance tracker. Next.js 16 App Router + React 19 + 
 
 Copy `.env.local.example` to `.env.local`:
 
-- `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`, `OPENAI_VISION_MODEL` — any OpenAI-compatible endpoint (chat in `app/api/chat/route.ts`, receipt OCR in `app/api/ocr/route.ts`). `lib/openai.ts` falls back to `gpt-4o-mini` / `"placeholder"` key.
+- `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL` — any OpenAI-compatible endpoint (chat in `app/api/chat/route.ts`, receipt structuring in `app/api/ocr/route.ts`). `lib/openai.ts` falls back to `gpt-4o-mini` / `"placeholder"` key.
+- `OCRSPACE_API_KEY` (required for Scan) — ocr.space extracts receipt text, `OPENAI_MODEL` structures it into a transaction list (`lib/ocrSpace.ts`). Without the key `/api/ocr` answers 503.
 - `DATABASE_URL` — unset = local SQLite at `data/finance.db` (gitignored, WAL mode); set = Postgres via `pg` + Drizzle. Driver is picked once in `lib/db/client.ts` (`dialect`).
 
 ## Structure
@@ -53,7 +54,8 @@ Copy `.env.local.example` to `.env.local`:
 ## Frontend conventions
 
 - Client-side data fetching must use `apiFetch()` from `lib/apiFetch.ts`, never bare `fetch()` (except `/api/workspaces` bootstrap in `WorkspaceProvider`), so the workspace header is attached. Gate workspace-dependent loads on `ready` from `useWorkspace()`.
-- `GET /api/transactions` does server-side filter/pagination (`category, account, from, to, limit, offset`); it fetches `limit+1` rows to compute `hasMore` without a COUNT. Keep `PAGE_SIZE = 30` in sync between `app/page.tsx` and the route.
+- `GET /api/transactions` does server-side filter/pagination (`category, account, from, to, q, limit, offset`); it fetches `limit+1` rows to compute `hasMore` without a COUNT. Keep `PAGE_SIZE = 30` in sync between `app/page.tsx` and the route. `q` matches description/category/account case-insensitively via `lower()` LIKE (`lib/search.ts` escapes `%_\\`); `summarize()` honors it too so the summary cards reflect search results.
 - POST validation returns 400 `{ error: "missing fields" }`; OCR parse failure returns 422. New transactions default `account` to `"Cash"`.
 - Styling: Tailwind 4 (`@import "tailwindcss"`, `@custom-variant dark`). Dark mode is a `.dark` class on `<html>` set pre-hydration from `localStorage("theme")` — don't switch to `media`-only dark mode. Reuse `ICON_BTN` for icon-only buttons and `fmtCurrency` for money.
-- Chat tools (`add_transaction`, `get_summary`, `list_transactions`) are defined in `app/api/chat/route.ts`; OCR prompt expects strict JSON `{date, description, category, amount, type}`. CSV parsing (`parseImportRow`) tolerates header casing, infers `type` from amount sign, strips non-numeric chars.
+- Chat tools (`add_transaction`, `get_summary`, `list_transactions`) are defined in `app/api/chat/route.ts`; the OCR structuring prompt (`lib/ocrSpace.ts`) expects a strict JSON array of `{date, description, category, amount, type}` (one object per receipt line item); `ReceiptUpload` shows each as an editable draft and saves via `POST /api/transactions/bulk`. CSV parsing (`parseImportRow`) tolerates header casing, infers `type` from amount sign, strips non-numeric chars.
+- Chat history persists per device in `localStorage` (`chat-history:<workspaceId>`, see `lib/chatHistory.ts`): same-day sessions resume, a new day starts fresh, and the New chat button resets. `ChatWidget` remounts `ChatPanel` per workspace via `key` — pass `workspaceId` as a prop.

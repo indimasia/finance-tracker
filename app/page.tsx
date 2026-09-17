@@ -14,7 +14,7 @@ import ThemeToggle from "@/components/ThemeToggle";
 import SettingsMenu from "@/components/SettingsMenu";
 import WorkspaceSwitcher from "@/components/WorkspaceSwitcher";
 import LogoutButton from "@/components/LogoutButton";
-import { PiggyBank } from "lucide-react";
+import { PiggyBank, Search, X } from "lucide-react";
 import FilterBar, { type Filters } from "@/components/FilterBar";
 
 const PAGE_SIZE = 30;
@@ -31,6 +31,14 @@ export default function Home() {
   });
   const [accounts, setAccounts] = useState<AccountRow[]>([]);
   const [filters, setFilters] = useState<Filters>({ category: "", from: "", to: "" });
+  const [query, setQuery] = useState("");
+  const [search, setSearch] = useState("");
+
+  // Debounce typing so each keystroke doesn't fire a request.
+  useEffect(() => {
+    const t = setTimeout(() => setSearch(query.trim()), 250);
+    return () => clearTimeout(t);
+  }, [query]);
   const [addOpen, setAddOpen] = useState(false);
 
   // Filters/pagination are applied server-side by /api/transactions.
@@ -40,11 +48,12 @@ export default function Home() {
       if (filters.category) params.set("category", filters.category);
       if (filters.from) params.set("from", filters.from);
       if (filters.to) params.set("to", filters.to);
+      if (search) params.set("q", search);
       params.set("limit", String(PAGE_SIZE));
       params.set("offset", String(offset));
       return params;
     },
-    [filters]
+    [filters, search]
   );
 
   const fetchPage = useCallback(
@@ -77,15 +86,17 @@ export default function Home() {
   // Reset to page 1 whenever filters change, the active workspace changes, or on initial load.
   useEffect(() => {
     if (!ready) return;
+    // Data fetching syncs with the API (external system), not derived state.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchPage(0, false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchPage, ready, workspaceId]);
 
   useEffect(() => {
     if (!ready) return;
+    // Data fetching syncs with the API (external system), not derived state.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     refreshCategories();
     refreshAccounts();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshCategories, refreshAccounts, ready, workspaceId]);
 
   function loadMore() {
@@ -143,6 +154,28 @@ export default function Home() {
             onDraftShown={() => setAddOpen(false)}
           />
           <FilterBar filters={filters} onChange={setFilters} allCategories={allCategories} />
+          <div className="relative flex-1 min-w-40">
+            <Search
+              size={16}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+            />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search description, category, account…"
+              aria-label="Search transactions"
+              className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 pl-9 pr-8 min-h-11 text-sm"
+            />
+            {query && (
+              <button
+                onClick={() => setQuery("")}
+                aria-label="Clear search"
+                className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex items-center justify-center w-7 h-7 rounded-full text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                <X size={16} />
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="rounded-xl bg-white dark:bg-slate-900 p-3 sm:p-4 shadow-sm">
@@ -155,6 +188,7 @@ export default function Home() {
             hasMore={hasMore}
             loadingMore={loadingMore}
             onLoadMore={loadMore}
+            searchQuery={search}
           />
         </div>
       </main>

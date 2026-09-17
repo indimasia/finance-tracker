@@ -13,4 +13,3 @@ export function getOpenAI(): OpenAI {
 }
 
 export const CHAT_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
-export const VISION_MODEL = process.env.OPENAI_VISION_MODEL || CHAT_MODEL;
