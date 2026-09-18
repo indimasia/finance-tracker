@@ -96,12 +96,44 @@ export async function deleteSession(token: string): Promise<void> {
 
 // ---- workspaces ---------------------------------------------------------
 
-export async function listWorkspaces(): Promise<{ id: number; name: string }[]> {
+export async function listWorkspaces(): Promise<
+  { id: number; name: string; defaultAccount: string }[]
+> {
   await ready;
   return db
-    .select({ id: schema.workspaces.id, name: schema.workspaces.name })
+    .select({
+      id: schema.workspaces.id,
+      name: schema.workspaces.name,
+      defaultAccount: schema.workspaces.defaultAccount,
+    })
     .from(schema.workspaces)
     .orderBy(schema.workspaces.id);
+}
+
+// Default account for new transactions in a workspace (blank account input
+// resolves to this). Falls back to Cash for unknown workspaces.
+export async function getWorkspaceDefaultAccount(workspaceId: number): Promise<string> {
+  await ready;
+  const rows = await db
+    .select({ defaultAccount: schema.workspaces.defaultAccount })
+    .from(schema.workspaces)
+    .where(eq(schema.workspaces.id, workspaceId));
+  return rows[0]?.defaultAccount?.trim() || "Cash";
+}
+
+export async function setWorkspaceDefaultAccount(
+  workspaceId: number,
+  name: string
+): Promise<void> {
+  await ready;
+  const trimmed = name?.trim() || "";
+  if (!trimmed) return;
+  // Keep the invariant that the default names a real account row.
+  await addAccount(workspaceId, trimmed);
+  await db
+    .update(schema.workspaces)
+    .set({ defaultAccount: trimmed })
+    .where(eq(schema.workspaces.id, workspaceId));
 }
 
 const DEFAULT_ACCOUNTS = ["Cash", "Bank", "Credit Card", "E-Wallet"];
@@ -202,9 +234,10 @@ async function getAccountByName(
 }
 
 // Resolve an account name to accounts.id for transactions.account_id,
-// creating the row when missing. Blank names fall back to Cash, as before.
+// creating the row when missing. Blank names resolve to the workspace's
+// default account.
 async function ensureAccountId(workspaceId: number, name: string): Promise<number> {
-  const trimmed = name?.trim() || "Cash";
+  const trimmed = name?.trim() || (await getWorkspaceDefaultAccount(workspaceId));
   await addAccount(workspaceId, trimmed);
   const account = await getAccountByName(workspaceId, trimmed);
   if (!account) throw new Error("account lookup failed");
@@ -232,6 +265,10 @@ export async function deleteAccount(workspaceId: number, name: string): Promise<
   await db
     .delete(schema.accounts)
     .where(and(eq(schema.accounts.workspaceId, workspaceId), eq(schema.accounts.name, name)));
+  // Don't leave the workspace default dangling at a deleted account.
+  if ((await getWorkspaceDefaultAccount(workspaceId)) === name) {
+    await setWorkspaceDefaultAccount(workspaceId, "Cash");
+  }
 }
 
 export async function renameAccount(
@@ -266,6 +303,10 @@ export async function renameAccount(
     .update(schema.accounts)
     .set({ name: trimmed })
     .where(and(eq(schema.accounts.workspaceId, workspaceId), eq(schema.accounts.name, oldName)));
+  // Keep the workspace default pointing at the renamed account.
+  if ((await getWorkspaceDefaultAccount(workspaceId)) === oldName) {
+    await setWorkspaceDefaultAccount(workspaceId, trimmed);
+  }
 }
 
 // ---- categories ---------------------------------------------------------
@@ -408,7 +449,7 @@ export async function addTransaction(
 ): Promise<Transaction> {
   await ready;
   await addCategory(workspaceId, t.category, t.type);
-  const accountName = t.account?.trim() || "Cash";
+  const accountName = t.account?.trim() || (await getWorkspaceDefaultAccount(workspaceId));
   const accountId = await ensureAccountId(workspaceId, accountName);
   const [row] = await db
     .insert(schema.transactions)
@@ -452,7 +493,7 @@ export async function updateTransaction(
   if (!existing) return undefined;
   const merged = { ...existing, ...t };
   await addCategory(workspaceId, merged.category, merged.type);
-  const accountName = merged.account?.trim() || "Cash";
+  const accountName = merged.account?.trim() || (await getWorkspaceDefaultAccount(workspaceId));
   const accountId = await ensureAccountId(workspaceId, accountName);
   await db
     .update(schema.transactions)

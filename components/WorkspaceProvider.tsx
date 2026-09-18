@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { getCurrentWorkspaceId, loadStoredWorkspaceId, setCurrentWorkspaceId } from "@/lib/apiFetch";
 
-type Workspace = { id: number; name: string };
+type Workspace = { id: number; name: string; defaultAccount: string };
 
 type WorkspaceContextValue = {
   workspaceId: number;

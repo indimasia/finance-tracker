@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Check, Filter, X } from "lucide-react";
 import { toLocalDateISO } from "@/lib/format";
+import { currentCycleRange } from "@/lib/cycle";
 
 export type Filters = {
   category: string;
@@ -28,15 +29,10 @@ function monthPreset(offset: number) {
   return { from: iso(start), to: iso(end) };
 }
 
-// Mirrors the budget page's 27th-of-prior-month .. 26th-of-this-month cycle.
+// Full budget cycle (27th .. 26th), matching the budget page — not just up to
+// today, so it stays highlighted while the default filter is active.
 function cyclePreset() {
-  const now = new Date();
-  const day = now.getDate();
-  const start =
-    day >= 27
-      ? new Date(now.getFullYear(), now.getMonth(), 27)
-      : new Date(now.getFullYear(), now.getMonth() - 1, 27);
-  return { from: iso(start), to: iso(now) };
+  return currentCycleRange();
 }
 
 const DATE_PRESETS: { label: string; range: () => { from: string; to: string } }[] = [

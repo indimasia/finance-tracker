@@ -33,7 +33,9 @@ export function parseImportRow(raw: Record<string, string>): ParsedRow {
   const category = get("category");
   const amountRaw = get("amount");
   const typeRaw = get("type").toLowerCase();
-  const account = get("account") || "Cash";
+  // Blank when the column is missing — the bulk route resolves it to the
+  // workspace's default account on import.
+  const account = get("account");
 
   const date = dateRaw ? normalizeDate(dateRaw) : null;
   if (!date) return { ok: false, raw, error: "invalid or missing date" };

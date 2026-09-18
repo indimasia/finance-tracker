@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { addTransactions } from "@/lib/db";
+import { addTransactions, getWorkspaceDefaultAccount } from "@/lib/db";
 import { getWorkspaceId } from "@/lib/workspace";
 import type { ImportRow } from "@/lib/importCsv";
 import { requireAuth } from "@/lib/auth";
@@ -28,15 +28,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "no rows provided" }, { status: 400 });
   }
 
+  const workspaceId = await getWorkspaceId(req);
+  const fallback = await getWorkspaceDefaultAccount(workspaceId);
   const valid: ImportRow[] = transactions.filter(isValid).map((t) => ({
     ...t,
-    account: t.account?.trim() || "Cash",
+    account: t.account?.trim() || fallback,
   }));
   const rejected = transactions.length - valid.length;
   if (valid.length === 0) {
     return NextResponse.json({ error: "no valid rows" }, { status: 400 });
   }
 
-  const inserted = await addTransactions(await getWorkspaceId(req), valid);
+  const inserted = await addTransactions(workspaceId, valid);
   return NextResponse.json({ inserted, rejected });
 }

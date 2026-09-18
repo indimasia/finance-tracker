@@ -30,11 +30,13 @@ function isDraft(d: unknown): d is Draft {
 export default function ReceiptUpload({
   categories,
   accounts,
+  defaultAccount,
   onSaved,
   onDraftShown,
 }: {
   categories: { income: string[]; expense: string[] };
   accounts: string[];
+  defaultAccount: string;
   onSaved: () => void;
   onDraftShown: () => void;
 }) {
@@ -186,7 +188,7 @@ export default function ReceiptUpload({
                 />
               </div>
               <CategoryInput
-                value={draft.account ?? "Cash"}
+                value={draft.account ?? defaultAccount}
                 onChange={(v) => updateDraft(i, { account: v })}
                 categories={accounts}
                 listId={`receipt-account-options-${i}`}

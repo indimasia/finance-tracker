@@ -4,6 +4,7 @@ export const workspaces = sqliteTable("workspaces", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   name: text("name").notNull().unique(),
   createdAt: text("created_at").notNull(),
+  defaultAccount: text("default_account").notNull().default("Cash"),
 });
 
 export const transactions = sqliteTable("transactions", {

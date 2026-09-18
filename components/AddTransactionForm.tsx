@@ -9,12 +9,14 @@ import CategoryInput from "@/components/CategoryInput";
 export default function AddTransactionForm({
   categories,
   accounts,
+  defaultAccount,
   onAdd,
   open,
   onToggle,
 }: {
   categories: { income: string[]; expense: string[] };
   accounts: string[];
+  defaultAccount: string;
   onAdd: () => void;
   open: boolean;
   onToggle: () => void;
@@ -26,7 +28,7 @@ export default function AddTransactionForm({
     category: "",
     amount: "",
     type: "expense",
-    account: "Cash",
+    account: defaultAccount || "Cash",
   });
 
   async function submit(e: React.FormEvent) {

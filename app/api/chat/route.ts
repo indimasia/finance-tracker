@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getOpenAI, CHAT_MODEL } from "@/lib/openai";
-import { addTransaction, listTransactions, summarize } from "@/lib/db";
+import { addTransaction, getWorkspaceDefaultAccount, listTransactions, summarize } from "@/lib/db";
 import { getWorkspaceId } from "@/lib/workspace";
 import type { ChatCompletionMessageParam, ChatCompletionTool } from "openai/resources/index";
 import { requireAuth } from "@/lib/auth";
@@ -21,7 +21,8 @@ const tools: ChatCompletionTool[] = [
           type: { type: "string", enum: ["income", "expense"] },
           account: {
             type: "string",
-            description: "e.g. Cash, Bank, Credit Card. Defaults to Cash if unknown.",
+            description:
+              "e.g. Cash, Bank, Credit Card. Defaults to the workspace's default account if unknown.",
           },
         },
         required: ["date", "description", "category", "amount", "type"],
@@ -58,7 +59,9 @@ async function runTool(workspaceId: number, name: string, args: Record<string, u
         category: String(args.category),
         amount: Number(args.amount),
         type: args.type === "income" ? "income" : "expense",
-        account: args.account ? String(args.account) : "Cash",
+        account: args.account
+          ? String(args.account)
+          : await getWorkspaceDefaultAccount(workspaceId),
       });
     }
     case "get_summary":

@@ -13,10 +13,12 @@ type Categories = { income: string[]; expense: string[] };
 export default function SettingsMenu({
   categories,
   accounts,
+  defaultAccount,
   onChanged,
 }: {
   categories: Categories;
   accounts: AccountRow[];
+  defaultAccount: string;
   onChanged: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -40,9 +42,13 @@ export default function SettingsMenu({
             onClick={() => setOpen(false)}
           />
           <div className="absolute right-0 mt-2 z-20 w-56 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-lg p-2 flex flex-col gap-1">
-            <ImportCsv onImported={onChanged} />
+            <ImportCsv onImported={onChanged} defaultAccount={defaultAccount} />
             <CategoryManager categories={categories} onChanged={onChanged} />
-            <AccountManager accounts={accounts} onChanged={onChanged} />
+            <AccountManager
+              accounts={accounts}
+              defaultAccount={defaultAccount}
+              onChanged={onChanged}
+            />
             <ChangePasswordForm />
           </div>
         </>

@@ -4,17 +4,21 @@ import { useState } from "react";
 import { Check, Pencil, Trash2, Wallet, X } from "lucide-react";
 import { ICON_BTN } from "@/lib/ui";
 import { apiFetch } from "@/lib/apiFetch";
+import { useWorkspace } from "@/components/WorkspaceProvider";
 import type { AccountRow } from "@/lib/types";
 
 const actionBtn = ICON_BTN;
 
 export default function AccountManager({
   accounts,
+  defaultAccount,
   onChanged,
 }: {
   accounts: AccountRow[];
+  defaultAccount: string;
   onChanged: () => void;
 }) {
+  const { workspaceId, refreshWorkspaces } = useWorkspace();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -22,6 +26,23 @@ export default function AccountManager({
   const [editing, setEditing] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editDescription, setEditDescription] = useState("");
+
+  async function saveDefault(next: string) {
+    if (!next || next === defaultAccount) return;
+    setError(null);
+    const res = await apiFetch("/api/workspaces", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: workspaceId, defaultAccount: next }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => null);
+      setError(data?.error || "Could not save default account.");
+      return;
+    }
+    await refreshWorkspaces();
+    onChanged();
+  }
 
   async function add(e: React.FormEvent) {
     e.preventDefault();
@@ -111,6 +132,21 @@ export default function AccountManager({
             <X size={18} />
           </button>
         </div>
+
+        <label className="flex items-center gap-2 text-sm shrink-0">
+          <span className="text-slate-500 shrink-0">Default account</span>
+          <select
+            value={accounts.some((a) => a.name === defaultAccount) ? defaultAccount : ""}
+            onChange={(e) => saveDefault(e.target.value)}
+            className="flex-1 min-w-0 rounded-md border border-slate-300 dark:border-slate-700 bg-transparent px-2 py-1.5 text-sm"
+          >
+            {accounts.map((a) => (
+              <option key={a.name} value={a.name}>
+                {a.name}
+              </option>
+            ))}
+          </select>
+        </label>
 
         <form onSubmit={add} className="space-y-2 shrink-0">
           <input

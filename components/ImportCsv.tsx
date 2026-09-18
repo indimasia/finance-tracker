@@ -22,7 +22,13 @@ function downloadTemplate() {
   URL.revokeObjectURL(url);
 }
 
-export default function ImportCsv({ onImported }: { onImported: () => void }) {
+export default function ImportCsv({
+  onImported,
+  defaultAccount,
+}: {
+  onImported: () => void;
+  defaultAccount: string;
+}) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   const [rows, setRows] = useState<ParsedRow[]>([]);
@@ -120,8 +126,8 @@ export default function ImportCsv({ onImported }: { onImported: () => void }) {
 
             <p className="text-xs text-slate-500 shrink-0">
               Expected columns: date, description, category, amount, type (optional — inferred from
-              amount sign if missing), account (optional — defaults to Cash). Nothing is saved
-              until you confirm.{" "}
+              amount sign if missing), account (optional — blank rows use the workspace default
+              account, currently {defaultAccount}). Nothing is saved until you confirm.{" "}
               <button onClick={downloadTemplate} className="underline hover:text-slate-700 dark:hover:text-slate-300">
                 Download template
               </button>
@@ -168,7 +174,7 @@ export default function ImportCsv({ onImported }: { onImported: () => void }) {
                           <td className="p-2">{r.row.category}</td>
                           <td className="p-2 text-right tabular-nums">{fmtCurrency(r.row.amount)}</td>
                           <td className="p-2 capitalize">{r.row.type}</td>
-                          <td className="p-2">{r.row.account}</td>
+                          <td className="p-2">{r.row.account || `${defaultAccount} (default)`}</td>
                           <td className="p-2 text-emerald-600">OK</td>
                         </>
                       ) : (

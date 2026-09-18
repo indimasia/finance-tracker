@@ -93,9 +93,22 @@ function initSqlite(): { db: BetterSQLite3Database<typeof sqliteSchema>; ready: 
     CREATE TABLE IF NOT EXISTS workspaces (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL UNIQUE,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      default_account TEXT NOT NULL DEFAULT 'Cash'
     );
   `);
+  const workspaceColumns = sqlite.prepare("PRAGMA table_info(workspaces)").all() as {
+    name: string;
+  }[];
+  if (!workspaceColumns.some((c) => c.name === "default_account")) {
+    // Tolerate a concurrent init (e.g. parallel `next build` workers) that
+    // adds the column first: re-check failure means someone else won.
+    try {
+      sqlite.exec("ALTER TABLE workspaces ADD COLUMN default_account TEXT NOT NULL DEFAULT 'Cash'");
+    } catch (e) {
+      if (!/duplicate column name/i.test((e as Error)?.message ?? "")) throw e;
+    }
+  }
   sqlite.prepare("INSERT OR IGNORE INTO workspaces (name) VALUES ('Default')").run();
   const defaultWorkspaceId = (
     sqlite.prepare("SELECT id FROM workspaces ORDER BY id LIMIT 1").get() as { id: number }
@@ -353,7 +366,8 @@ function initPg(): { db: NodePgDatabase<typeof pgSchema>; ready: Promise<void> }
       CREATE TABLE IF NOT EXISTS workspaces (
         id SERIAL PRIMARY KEY,
         name TEXT NOT NULL UNIQUE,
-        created_at TEXT NOT NULL
+        created_at TEXT NOT NULL,
+        default_account TEXT NOT NULL DEFAULT 'Cash'
       );
       CREATE TABLE IF NOT EXISTS accounts (
         id SERIAL PRIMARY KEY,
@@ -419,6 +433,14 @@ function initPg(): { db: NodePgDatabase<typeof pgSchema>; ready: Promise<void> }
     try {
       await client.query("BEGIN");
       await client.query("SELECT pg_advisory_xact_lock(hashtext('finance_tracker_migrate'))");
+      const { rows: wcols } = await client.query(
+        "SELECT column_name FROM information_schema.columns WHERE table_name = 'workspaces'"
+      );
+      if (!wcols.some((r: { column_name: string }) => r.column_name === "default_account")) {
+        await client.query(
+          "ALTER TABLE workspaces ADD COLUMN default_account TEXT NOT NULL DEFAULT 'Cash'"
+        );
+      }
       await migratePgTransactions(client);
       await widenPgAmount(client, "transactions");
       await widenPgAmount(client, "budgets");

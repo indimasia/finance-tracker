@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createWorkspace, deleteWorkspace, listWorkspaces, renameWorkspace } from "@/lib/db";
+import {
+  createWorkspace,
+  deleteWorkspace,
+  listWorkspaces,
+  renameWorkspace,
+  setWorkspaceDefaultAccount,
+} from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
@@ -27,11 +33,18 @@ export async function PATCH(req: NextRequest) {
   const unauthorized = await requireAuth(req);
   if (unauthorized) return unauthorized;
 
-  const { id, name } = await req.json();
-  if (!id || !name?.trim()) {
-    return NextResponse.json({ error: "missing id or name" }, { status: 400 });
+  const { id, name, defaultAccount } = await req.json();
+  if (!id) return NextResponse.json({ error: "missing id" }, { status: 400 });
+  if (name?.trim()) {
+    await renameWorkspace(id, name);
+  } else if (typeof defaultAccount === "string" && defaultAccount.trim()) {
+    await setWorkspaceDefaultAccount(id, defaultAccount);
+  } else {
+    return NextResponse.json(
+      { error: "provide id+name to rename, or id+defaultAccount to set the default account" },
+      { status: 400 }
+    );
   }
-  await renameWorkspace(id, name);
   return NextResponse.json({ workspaces: await listWorkspaces() });
 }
 

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { addTransaction, listTransactions, summarize } from "@/lib/db";
+import { addTransaction, getWorkspaceDefaultAccount, listTransactions, summarize } from "@/lib/db";
 import { getWorkspaceId } from "@/lib/workspace";
 import { requireAuth } from "@/lib/auth";
 
@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
     category,
     amount: Number(amount),
     type,
-    account: account || "Cash",
+    account: account || (await getWorkspaceDefaultAccount(workspaceId)),
   });
   return NextResponse.json({ transaction: t });
 }

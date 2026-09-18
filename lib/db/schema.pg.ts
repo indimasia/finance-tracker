@@ -4,6 +4,7 @@ export const workspaces = pgTable("workspaces", {
   id: serial("id").primaryKey(),
   name: text("name").notNull().unique(),
   createdAt: text("created_at").notNull(),
+  defaultAccount: text("default_account").notNull().default("Cash"),
 });
 
 export const transactions = pgTable("transactions", {

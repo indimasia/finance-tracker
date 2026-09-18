@@ -16,11 +16,14 @@ import WorkspaceSwitcher from "@/components/WorkspaceSwitcher";
 import LogoutButton from "@/components/LogoutButton";
 import { PiggyBank, Search, X } from "lucide-react";
 import FilterBar, { type Filters } from "@/components/FilterBar";
+import { currentCycleRange } from "@/lib/cycle";
 
 const PAGE_SIZE = 30;
 
 export default function Home() {
-  const { workspaceId, ready } = useWorkspace();
+  const { workspaceId, ready, workspaces } = useWorkspace();
+  const defaultAccount =
+    workspaces.find((w) => w.id === workspaceId)?.defaultAccount || "Cash";
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -30,7 +33,9 @@ export default function Home() {
     expense: [],
   });
   const [accounts, setAccounts] = useState<AccountRow[]>([]);
-  const [filters, setFilters] = useState<Filters>({ category: "", from: "", to: "" });
+  // The list opens on this budget cycle's date range (27th .. 26th); the
+  // user can still switch to All time or another preset in the filters.
+  const [filters, setFilters] = useState<Filters>(() => ({ category: "", ...currentCycleRange() }));
   const [query, setQuery] = useState("");
   const [search, setSearch] = useState("");
 
@@ -130,7 +135,12 @@ export default function Home() {
             <PiggyBank size={16} />
             <span className="hidden sm:inline">Budget</span>
           </Link>
-          <SettingsMenu categories={categories} accounts={accounts} onChanged={refresh} />
+          <SettingsMenu
+            categories={categories}
+            accounts={accounts}
+            defaultAccount={defaultAccount}
+            onChanged={refresh}
+          />
           <ThemeToggle />
           <LogoutButton />
         </div>
@@ -143,6 +153,7 @@ export default function Home() {
           <AddTransactionForm
             categories={categories}
             accounts={accountNames}
+            defaultAccount={defaultAccount}
             onAdd={refresh}
             open={addOpen}
             onToggle={() => setAddOpen((v) => !v)}
@@ -150,6 +161,7 @@ export default function Home() {
           <ReceiptUpload
             categories={categories}
             accounts={accountNames}
+            defaultAccount={defaultAccount}
             onSaved={refresh}
             onDraftShown={() => setAddOpen(false)}
           />
