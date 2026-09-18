@@ -8,6 +8,9 @@ import { apiFetch } from "@/lib/apiFetch";
 type Categories = { income: string[]; expense: string[] };
 
 const actionBtn = ICON_BTN;
+// ponytail: subcategories are plain category strings joined with SEP (e.g. "Food > Dining Out"),
+// no schema change — reuses the existing flat category list, filters, and budget grouping as-is.
+const SEP = " > ";
 
 export default function CategoryManager({
   categories,
@@ -19,18 +22,23 @@ export default function CategoryManager({
   const [open, setOpen] = useState(false);
   const [type, setType] = useState<"expense" | "income">("expense");
   const [name, setName] = useState("");
+  const [parent, setParent] = useState("");
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
+
+  const list = categories[type];
+  const topLevel = list.filter((c) => !c.includes(SEP));
 
   async function add(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim() || saving) return;
     setSaving(true);
+    const fullName = parent ? `${parent}${SEP}${name.trim()}` : name.trim();
     await apiFetch("/api/categories", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, type }),
+      body: JSON.stringify({ name: fullName, type }),
     });
     setName("");
     setSaving(false);
@@ -119,6 +127,18 @@ export default function CategoryManager({
         </div>
 
         <form onSubmit={add} className="flex gap-2">
+          <select
+            value={parent}
+            onChange={(e) => setParent(e.target.value)}
+            className="rounded-md border border-slate-300 dark:border-slate-700 bg-transparent px-2 py-2 text-sm"
+          >
+            <option value="">Top-level</option>
+            {topLevel.map((c) => (
+              <option key={c} value={c}>
+                Sub of {c}
+              </option>
+            ))}
+          </select>
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -135,54 +155,62 @@ export default function CategoryManager({
         </form>
 
         <ul className="max-h-64 overflow-y-auto divide-y divide-slate-200 dark:divide-slate-800">
-          {categories[type].map((c) =>
-            editing === c ? (
-              <li key={c} className="flex items-center gap-2 py-2 text-sm">
-                <input
-                  autoFocus
-                  value={editValue}
-                  onChange={(e) => setEditValue(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && saveEdit(c)}
-                  className="flex-1 min-w-0 rounded-md border border-slate-300 dark:border-slate-700 bg-transparent px-2 py-1.5 text-sm"
-                />
-                <button
-                  onClick={() => saveEdit(c)}
-                  className={actionBtn + " text-emerald-600 hover:bg-emerald-100 dark:hover:bg-emerald-950"}
-                  aria-label="Save"
-                >
-                  <Check size={18} />
-                </button>
-                <button
-                  onClick={() => setEditing(null)}
-                  className={actionBtn + " text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"}
-                  aria-label="Cancel"
-                >
-                  <X size={18} />
-                </button>
-              </li>
-            ) : (
-              <li key={c} className="flex items-center justify-between py-1.5 text-sm gap-2">
-                <span className="truncate">{c}</span>
-                <span className="flex items-center gap-1 shrink-0">
+          {topLevel.map((top) => {
+            const children = list.filter((c) => c.startsWith(top + SEP));
+            return [top, ...children].map((c) =>
+              editing === c ? (
+                <li key={c} className="flex items-center gap-2 py-2 text-sm">
+                  <input
+                    autoFocus
+                    value={editValue}
+                    onChange={(e) => setEditValue(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && saveEdit(c)}
+                    className="flex-1 min-w-0 rounded-md border border-slate-300 dark:border-slate-700 bg-transparent px-2 py-1.5 text-sm"
+                  />
                   <button
-                    onClick={() => startEdit(c)}
-                    className={actionBtn + " text-blue-600 hover:bg-blue-100 dark:hover:bg-blue-950"}
-                    aria-label="Rename"
+                    onClick={() => saveEdit(c)}
+                    className={actionBtn + " text-emerald-600 hover:bg-emerald-100 dark:hover:bg-emerald-950"}
+                    aria-label="Save"
                   >
-                    <Pencil size={16} />
+                    <Check size={18} />
                   </button>
                   <button
-                    onClick={() => remove(c)}
-                    className={actionBtn + " text-rose-600 hover:bg-rose-100 dark:hover:bg-rose-950"}
-                    aria-label="Delete"
+                    onClick={() => setEditing(null)}
+                    className={actionBtn + " text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"}
+                    aria-label="Cancel"
                   >
-                    <Trash2 size={16} />
+                    <X size={18} />
                   </button>
-                </span>
-              </li>
-            )
-          )}
-          {categories[type].length === 0 && (
+                </li>
+              ) : (
+                <li
+                  key={c}
+                  className={
+                    "flex items-center justify-between py-1.5 text-sm gap-2" + (c !== top ? " pl-4" : "")
+                  }
+                >
+                  <span className="truncate">{c === top ? c : c.slice(top.length + SEP.length)}</span>
+                  <span className="flex items-center gap-1 shrink-0">
+                    <button
+                      onClick={() => startEdit(c)}
+                      className={actionBtn + " text-blue-600 hover:bg-blue-100 dark:hover:bg-blue-950"}
+                      aria-label="Rename"
+                    >
+                      <Pencil size={16} />
+                    </button>
+                    <button
+                      onClick={() => remove(c)}
+                      className={actionBtn + " text-rose-600 hover:bg-rose-100 dark:hover:bg-rose-950"}
+                      aria-label="Delete"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </span>
+                </li>
+              )
+            );
+          })}
+          {list.length === 0 && (
             <li className="py-3 text-center text-xs text-slate-500">No categories yet.</li>
           )}
         </ul>
