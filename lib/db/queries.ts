@@ -1,6 +1,7 @@
 import { and, desc, eq, gte, lt, lte, sql } from "drizzle-orm";
 import { db, ready, schema } from "./client";
 import type { AccountRow, Transaction } from "@/lib/types";
+import { parseAiInsights, type Insight } from "@/lib/insights";
 import { toLikePattern } from "@/lib/search";
 
 type TransactionRow = Pick<
@@ -614,5 +615,42 @@ export async function setBudget(
     .onConflictDoUpdate({
       target: [schema.budgets.workspaceId, schema.budgets.month, schema.budgets.category, schema.budgets.type],
       set: { amount },
+    });
+}
+
+// ---- daily AI insights ---------------------------------------------------------
+
+export async function getDailyInsight(
+  workspaceId: number,
+  date: string
+): Promise<Insight[] | null> {
+  await ready;
+  const rows = await db
+    .select({ content: schema.dailyInsights.content })
+    .from(schema.dailyInsights)
+    .where(
+      and(
+        eq(schema.dailyInsights.workspaceId, workspaceId),
+        eq(schema.dailyInsights.date, date)
+      )
+    );
+  if (!rows[0]) return null;
+  return parseAiInsights(rows[0].content);
+}
+
+export async function saveDailyInsight(
+  workspaceId: number,
+  date: string,
+  insights: Insight[]
+): Promise<void> {
+  await ready;
+  const content = JSON.stringify(insights);
+  const createdAt = new Date().toISOString();
+  await db
+    .insert(schema.dailyInsights)
+    .values({ workspaceId, date, content, createdAt })
+    .onConflictDoUpdate({
+      target: [schema.dailyInsights.workspaceId, schema.dailyInsights.date],
+      set: { content, createdAt },
     });
 }

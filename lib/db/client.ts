@@ -70,6 +70,14 @@ function initSqlite(): { db: BetterSQLite3Database<typeof sqliteSchema>; ready: 
   sqlite.exec(`
     CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, expires_at INTEGER NOT NULL);
+    CREATE TABLE IF NOT EXISTS daily_insights (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      workspace_id INTEGER NOT NULL,
+      date TEXT NOT NULL,
+      content TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (workspace_id, date)
+    );
   `);
 
   // Rename from the old "project" naming (pre-existing installs only).
@@ -363,6 +371,14 @@ function initPg(): { db: NodePgDatabase<typeof pgSchema>; ready: Promise<void> }
     await pool.query(`
       CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, expires_at BIGINT NOT NULL);
+      CREATE TABLE IF NOT EXISTS daily_insights (
+        id SERIAL PRIMARY KEY,
+        workspace_id INTEGER NOT NULL,
+        date TEXT NOT NULL,
+        content TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        UNIQUE (workspace_id, date)
+      );
       CREATE TABLE IF NOT EXISTS workspaces (
         id SERIAL PRIMARY KEY,
         name TEXT NOT NULL UNIQUE,

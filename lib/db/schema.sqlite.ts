@@ -70,6 +70,19 @@ export const settings = sqliteTable("settings", {
   value: text("value").notNull(),
 });
 
+// Cached AI insight of the day, one row per workspace per local date.
+export const dailyInsights = sqliteTable(
+  "daily_insights",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    workspaceId: integer("workspace_id").notNull(),
+    date: text("date").notNull(),
+    content: text("content").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (t) => [uniqueIndex("daily_insights_workspace_date_idx").on(t.workspaceId, t.date)]
+);
+
 export const sessions = sqliteTable("sessions", {
   token: text("token").primaryKey(),
   expiresAt: integer("expires_at").notNull(),

@@ -12,6 +12,7 @@ import ReceiptUpload from "@/components/ReceiptUpload";
 import ChatWidget from "@/components/ChatWidget";
 import ThemeToggle from "@/components/ThemeToggle";
 import SettingsMenu from "@/components/SettingsMenu";
+import InsightsPanel from "@/components/InsightsPanel";
 import WorkspaceSwitcher from "@/components/WorkspaceSwitcher";
 import LogoutButton from "@/components/LogoutButton";
 import { PiggyBank, Search, X } from "lucide-react";
@@ -33,6 +34,7 @@ export default function Home() {
     expense: [],
   });
   const [accounts, setAccounts] = useState<AccountRow[]>([]);
+  const [dataTick, setDataTick] = useState(0);
   // The list opens on this budget cycle's date range (27th .. 26th); the
   // user can still switch to All time or another preset in the filters.
   const [filters, setFilters] = useState<Filters>(() => ({ category: "", ...currentCycleRange() }));
@@ -86,6 +88,7 @@ export default function Home() {
 
   const refresh = useCallback(async () => {
     await Promise.all([fetchPage(0, false), refreshCategories(), refreshAccounts()]);
+    setDataTick((t) => t + 1);
   }, [fetchPage, refreshCategories, refreshAccounts]);
 
   // Reset to page 1 whenever filters change, the active workspace changes, or on initial load.
@@ -148,6 +151,7 @@ export default function Home() {
 
       <main className="max-w-3xl mx-auto px-4 sm:px-6 pb-24 space-y-3">
         <SummaryCards summary={summary} />
+        <InsightsPanel tick={dataTick} />
 
         <div className="flex flex-wrap items-center gap-2">
           <AddTransactionForm
