@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, text, real, bigint, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, doublePrecision, bigint, uniqueIndex } from "drizzle-orm/pg-core";
 
 export const workspaces = pgTable("workspaces", {
   id: serial("id").primaryKey(),
@@ -12,9 +12,13 @@ export const transactions = pgTable("transactions", {
   date: text("date").notNull(),
   description: text("description").notNull(),
   category: text("category").notNull(),
-  amount: real("amount").notNull(),
+  // DOUBLE PRECISION (float8) — real (float4) loses precision on large IDR amounts.
+  amount: doublePrecision("amount").notNull(),
   type: text("type").notNull(),
-  account: text("account").notNull(),
+  // Relation to accounts.id (resolved to the account name at the query layer).
+  accountId: integer("account_id")
+    .notNull()
+    .references(() => accounts.id),
   createdAt: text("created_at").notNull(),
 });
 
@@ -48,7 +52,7 @@ export const budgets = pgTable(
     month: text("month").notNull(),
     category: text("category").notNull(),
     type: text("type").notNull(),
-    amount: real("amount").notNull(),
+    amount: doublePrecision("amount").notNull(),
   },
   (t) => [
     uniqueIndex("budgets_workspace_month_category_type_idx").on(

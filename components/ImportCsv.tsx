@@ -7,9 +7,9 @@ import { fmtCurrency } from "@/lib/format";
 import { apiFetch } from "@/lib/apiFetch";
 import { parseImportRow, type ParsedRow } from "@/lib/importCsv";
 
-const TEMPLATE_CSV = `date,description,category,amount,type
-2026-09-01,Grocery shopping,Food,150000,expense
-2026-09-05,Monthly salary,Salary,15000000,income
+const TEMPLATE_CSV = `date,description,category,amount,type,account
+2026-09-01,Grocery shopping,Food,150000,expense,Cash
+2026-09-05,Monthly salary,Salary,15000000,income,Bank
 `;
 
 function downloadTemplate() {
@@ -120,7 +120,8 @@ export default function ImportCsv({ onImported }: { onImported: () => void }) {
 
             <p className="text-xs text-slate-500 shrink-0">
               Expected columns: date, description, category, amount, type (optional — inferred from
-              amount sign if missing). Nothing is saved until you confirm.{" "}
+              amount sign if missing), account (optional — defaults to Cash). Nothing is saved
+              until you confirm.{" "}
               <button onClick={downloadTemplate} className="underline hover:text-slate-700 dark:hover:text-slate-300">
                 Download template
               </button>
@@ -137,6 +138,7 @@ export default function ImportCsv({ onImported }: { onImported: () => void }) {
                     <th className="p-2 text-left">Category</th>
                     <th className="p-2 text-right">Amount</th>
                     <th className="p-2 text-left">Type</th>
+                    <th className="p-2 text-left">Account</th>
                     <th className="p-2 text-left">Status</th>
                   </tr>
                 </thead>
@@ -166,10 +168,11 @@ export default function ImportCsv({ onImported }: { onImported: () => void }) {
                           <td className="p-2">{r.row.category}</td>
                           <td className="p-2 text-right tabular-nums">{fmtCurrency(r.row.amount)}</td>
                           <td className="p-2 capitalize">{r.row.type}</td>
+                          <td className="p-2">{r.row.account}</td>
                           <td className="p-2 text-emerald-600">OK</td>
                         </>
                       ) : (
-                        <td className="p-2 text-rose-600" colSpan={5}>
+                        <td className="p-2 text-rose-600" colSpan={7}>
                           {r.error}
                         </td>
                       )}

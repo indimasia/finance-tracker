@@ -28,7 +28,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "no rows provided" }, { status: 400 });
   }
 
-  const valid = transactions.filter(isValid);
+  const valid: ImportRow[] = transactions.filter(isValid).map((t) => ({
+    ...t,
+    account: t.account?.trim() || "Cash",
+  }));
   const rejected = transactions.length - valid.length;
   if (valid.length === 0) {
     return NextResponse.json({ error: "no valid rows" }, { status: 400 });

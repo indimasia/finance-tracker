@@ -12,9 +12,13 @@ export const transactions = sqliteTable("transactions", {
   date: text("date").notNull(),
   description: text("description").notNull(),
   category: text("category").notNull(),
+  // REAL is SQLite's 8-byte float — already the widest float affinity.
   amount: real("amount").notNull(),
   type: text("type").notNull(),
-  account: text("account").notNull(),
+  // Relation to accounts.id (resolved to the account name at the query layer).
+  accountId: integer("account_id")
+    .notNull()
+    .references(() => accounts.id),
   createdAt: text("created_at").notNull(),
 });
 

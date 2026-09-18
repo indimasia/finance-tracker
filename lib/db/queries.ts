@@ -3,7 +3,23 @@ import { db, ready, schema } from "./client";
 import type { AccountRow, Transaction } from "@/lib/types";
 import { toLikePattern } from "@/lib/search";
 
-function mapTransaction(row: typeof schema.transactions.$inferSelect): Transaction {
+type TransactionRow = Pick<
+  typeof schema.transactions.$inferSelect,
+  "id" | "date" | "description" | "category" | "amount" | "type" | "createdAt"
+>;
+
+const transactionWithAccount = {
+  id: schema.transactions.id,
+  date: schema.transactions.date,
+  description: schema.transactions.description,
+  category: schema.transactions.category,
+  amount: schema.transactions.amount,
+  type: schema.transactions.type,
+  accountName: schema.accounts.name,
+  createdAt: schema.transactions.createdAt,
+};
+
+function mapTransaction(row: TransactionRow, accountName: string): Transaction {
   return {
     id: row.id,
     date: row.date,
@@ -11,9 +27,25 @@ function mapTransaction(row: typeof schema.transactions.$inferSelect): Transacti
     category: row.category,
     amount: row.amount,
     type: row.type as "income" | "expense",
-    account: row.account,
+    account: accountName,
     created_at: row.createdAt,
   };
+}
+
+async function getTransaction(
+  workspaceId: number,
+  id: number
+): Promise<Transaction | undefined> {
+  await ready;
+  const rows = await db
+    .select(transactionWithAccount)
+    .from(schema.transactions)
+    .innerJoin(schema.accounts, eq(schema.transactions.accountId, schema.accounts.id))
+    .where(
+      and(eq(schema.transactions.workspaceId, workspaceId), eq(schema.transactions.id, id))
+    );
+  const row = rows[0];
+  return row ? mapTransaction(row, row.accountName) : undefined;
 }
 
 // ---- auth ---------------------------------------------------------
@@ -157,8 +189,46 @@ export async function setAccountDescription(
     .where(and(eq(schema.accounts.workspaceId, workspaceId), eq(schema.accounts.name, name)));
 }
 
+async function getAccountByName(
+  workspaceId: number,
+  name: string
+): Promise<{ id: number; name: string } | undefined> {
+  await ready;
+  const rows = await db
+    .select({ id: schema.accounts.id, name: schema.accounts.name })
+    .from(schema.accounts)
+    .where(and(eq(schema.accounts.workspaceId, workspaceId), eq(schema.accounts.name, name)));
+  return rows[0];
+}
+
+// Resolve an account name to accounts.id for transactions.account_id,
+// creating the row when missing. Blank names fall back to Cash, as before.
+async function ensureAccountId(workspaceId: number, name: string): Promise<number> {
+  const trimmed = name?.trim() || "Cash";
+  await addAccount(workspaceId, trimmed);
+  const account = await getAccountByName(workspaceId, trimmed);
+  if (!account) throw new Error("account lookup failed");
+  return account.id;
+}
+
 export async function deleteAccount(workspaceId: number, name: string): Promise<void> {
   await ready;
+  const account = await getAccountByName(workspaceId, name);
+  if (!account) return;
+  const [{ n }] = await db
+    .select({ n: sql<number>`count(*)` })
+    .from(schema.transactions)
+    .where(
+      and(
+        eq(schema.transactions.workspaceId, workspaceId),
+        eq(schema.transactions.accountId, account.id)
+      )
+    );
+  if (Number(n) > 0) {
+    const err = new Error("account has transactions") as Error & { code?: string };
+    err.code = "ACCOUNT_IN_USE";
+    throw err;
+  }
   await db
     .delete(schema.accounts)
     .where(and(eq(schema.accounts.workspaceId, workspaceId), eq(schema.accounts.name, name)));
@@ -172,21 +242,30 @@ export async function renameAccount(
   await ready;
   const trimmed = newName.trim();
   if (!trimmed || trimmed === oldName) return;
-  await db.transaction(async (tx) => {
-    await tx
+  const keeper = await getAccountByName(workspaceId, oldName);
+  if (!keeper) return;
+  // Merge when the target name is taken: move its transactions over first so
+  // the foreign key is never violated, then rename. Transactions already on
+  // the renamed account follow it automatically through the relation.
+  const target = await getAccountByName(workspaceId, trimmed);
+  if (target && target.id !== keeper.id) {
+    await db
+      .update(schema.transactions)
+      .set({ accountId: keeper.id })
+      .where(
+        and(
+          eq(schema.transactions.workspaceId, workspaceId),
+          eq(schema.transactions.accountId, target.id)
+        )
+      );
+    await db
       .delete(schema.accounts)
       .where(and(eq(schema.accounts.workspaceId, workspaceId), eq(schema.accounts.name, trimmed)));
-    await tx
-      .update(schema.accounts)
-      .set({ name: trimmed })
-      .where(and(eq(schema.accounts.workspaceId, workspaceId), eq(schema.accounts.name, oldName)));
-    await tx
-      .update(schema.transactions)
-      .set({ account: trimmed })
-      .where(
-        and(eq(schema.transactions.workspaceId, workspaceId), eq(schema.transactions.account, oldName))
-      );
-  });
+  }
+  await db
+    .update(schema.accounts)
+    .set({ name: trimmed })
+    .where(and(eq(schema.accounts.workspaceId, workspaceId), eq(schema.accounts.name, oldName)));
 }
 
 // ---- categories ---------------------------------------------------------
@@ -293,7 +372,7 @@ export async function listTransactions(
   await ready;
   const conditions = [eq(schema.transactions.workspaceId, workspaceId)];
   if (filters.category) conditions.push(eq(schema.transactions.category, filters.category));
-  if (filters.account) conditions.push(eq(schema.transactions.account, filters.account));
+  if (filters.account) conditions.push(eq(schema.accounts.name, filters.account));
   if (filters.from) conditions.push(gte(schema.transactions.date, filters.from));
   if (filters.to) conditions.push(lte(schema.transactions.date, filters.to));
   if (filters.q) {
@@ -303,13 +382,14 @@ export async function listTransactions(
     conditions.push(sql`(
       lower(${schema.transactions.description}) LIKE lower(${pattern}) ESCAPE '\\' OR
       lower(${schema.transactions.category}) LIKE lower(${pattern}) ESCAPE '\\' OR
-      lower(${schema.transactions.account}) LIKE lower(${pattern}) ESCAPE '\\'
+      lower(${schema.accounts.name}) LIKE lower(${pattern}) ESCAPE '\\'
     )`);
   }
 
   let query = db
-    .select()
+    .select(transactionWithAccount)
     .from(schema.transactions)
+    .innerJoin(schema.accounts, eq(schema.transactions.accountId, schema.accounts.id))
     .where(and(...conditions))
     .orderBy(desc(schema.transactions.date), desc(schema.transactions.id))
     .$dynamic();
@@ -319,7 +399,7 @@ export async function listTransactions(
   }
 
   const rows = await query;
-  return rows.map(mapTransaction);
+  return rows.map((r) => mapTransaction(r, r.accountName));
 }
 
 export async function addTransaction(
@@ -328,8 +408,8 @@ export async function addTransaction(
 ): Promise<Transaction> {
   await ready;
   await addCategory(workspaceId, t.category, t.type);
-  const account = t.account?.trim() || "Cash";
-  await addAccount(workspaceId, account);
+  const accountName = t.account?.trim() || "Cash";
+  const accountId = await ensureAccountId(workspaceId, accountName);
   const [row] = await db
     .insert(schema.transactions)
     .values({
@@ -339,11 +419,11 @@ export async function addTransaction(
       category: t.category,
       amount: t.amount,
       type: t.type,
-      account,
+      accountId,
       createdAt: new Date().toISOString(),
     })
     .returning();
-  return mapTransaction(row);
+  return mapTransaction(row, accountName);
 }
 
 export async function addTransactions(
@@ -368,15 +448,12 @@ export async function updateTransaction(
   t: Partial<Omit<Transaction, "id" | "created_at">>
 ): Promise<Transaction | undefined> {
   await ready;
-  const [existingRow] = await db
-    .select()
-    .from(schema.transactions)
-    .where(and(eq(schema.transactions.workspaceId, workspaceId), eq(schema.transactions.id, id)));
-  if (!existingRow) return undefined;
-  const existing = mapTransaction(existingRow);
+  const existing = await getTransaction(workspaceId, id);
+  if (!existing) return undefined;
   const merged = { ...existing, ...t };
   await addCategory(workspaceId, merged.category, merged.type);
-  await addAccount(workspaceId, merged.account);
+  const accountName = merged.account?.trim() || "Cash";
+  const accountId = await ensureAccountId(workspaceId, accountName);
   await db
     .update(schema.transactions)
     .set({
@@ -385,11 +462,10 @@ export async function updateTransaction(
       category: merged.category,
       amount: merged.amount,
       type: merged.type,
-      account: merged.account,
+      accountId,
     })
     .where(and(eq(schema.transactions.workspaceId, workspaceId), eq(schema.transactions.id, id)));
-  const [updated] = await db.select().from(schema.transactions).where(eq(schema.transactions.id, id));
-  return mapTransaction(updated);
+  return getTransaction(workspaceId, id);
 }
 
 export async function summarize(

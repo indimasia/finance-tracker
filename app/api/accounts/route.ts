@@ -47,6 +47,16 @@ export async function DELETE(req: NextRequest) {
   const workspaceId = await getWorkspaceId(req);
   const { name } = await req.json();
   if (!name) return NextResponse.json({ error: "missing name" }, { status: 400 });
-  await deleteAccount(workspaceId, name);
+  try {
+    await deleteAccount(workspaceId, name);
+  } catch (e) {
+    if ((e as { code?: string })?.code === "ACCOUNT_IN_USE") {
+      return NextResponse.json(
+        { error: "account has transactions and cannot be removed" },
+        { status: 409 }
+      );
+    }
+    throw e;
+  }
   return NextResponse.json({ accounts: await listAccounts(workspaceId) });
 }

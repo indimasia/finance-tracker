@@ -1,7 +1,7 @@
 import path from "path";
 import fs from "fs";
 import Database from "better-sqlite3";
-import { Pool } from "pg";
+import { Pool, type PoolClient } from "pg";
 import { drizzle as drizzleSqlite, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { drizzle as drizzlePg, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import * as sqliteSchema from "./schema.sqlite";
@@ -27,11 +27,45 @@ const DEFAULT_CATEGORIES: { name: string; type: "income" | "expense" }[] = [
   { name: "Other", type: "income" },
 ];
 
+// One-time upgrade for installs that stored the account name in
+// transactions.account: create the matching accounts rows and point
+// transactions.account_id at them (blank/unknown names become Cash).
+function backfillTransactionAccountIds(sqlite: Database.Database) {
+  const workspaces = sqlite.prepare("SELECT id FROM workspaces").all() as { id: number }[];
+  const ensureAccount = sqlite.prepare(
+    "INSERT OR IGNORE INTO accounts (workspace_id, name) VALUES (?, ?)"
+  );
+  for (const w of workspaces) {
+    ensureAccount.run(w.id, "Cash");
+    const names = sqlite
+      .prepare("SELECT DISTINCT account FROM transactions WHERE workspace_id = ?")
+      .all(w.id) as { account: string | null }[];
+    for (const { account } of names) {
+      const name = (account ?? "").trim() || "Cash";
+      ensureAccount.run(w.id, name);
+    }
+  }
+  sqlite
+    .prepare(
+      `
+      UPDATE transactions
+      SET account_id = (
+        SELECT id FROM accounts
+        WHERE accounts.workspace_id = transactions.workspace_id
+          AND accounts.name = COALESCE(NULLIF(TRIM(transactions.account), ''), 'Cash')
+      )
+      WHERE account_id IS NULL
+    `
+    )
+    .run();
+}
+
 function initSqlite(): { db: BetterSQLite3Database<typeof sqliteSchema>; ready: Promise<void> } {
   const dataDir = path.join(process.cwd(), "data");
   if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
   const sqlite = new Database(path.join(dataDir, "finance.db"));
   sqlite.pragma("journal_mode = WAL");
+  sqlite.pragma("foreign_keys = ON");
 
   sqlite.exec(`
     CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -68,29 +102,6 @@ function initSqlite(): { db: BetterSQLite3Database<typeof sqliteSchema>; ready: 
   ).id;
 
   sqlite.exec(`
-    CREATE TABLE IF NOT EXISTS transactions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      date TEXT NOT NULL,
-      description TEXT NOT NULL,
-      category TEXT NOT NULL,
-      amount REAL NOT NULL,
-      type TEXT NOT NULL CHECK (type IN ('income', 'expense')),
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-  `);
-  const transactionColumns = sqlite.prepare("PRAGMA table_info(transactions)").all() as {
-    name: string;
-  }[];
-  if (!transactionColumns.some((c) => c.name === "account")) {
-    sqlite.exec("ALTER TABLE transactions ADD COLUMN account TEXT NOT NULL DEFAULT 'Cash'");
-  }
-  if (!transactionColumns.some((c) => c.name === "workspace_id")) {
-    sqlite.exec(
-      `ALTER TABLE transactions ADD COLUMN workspace_id INTEGER NOT NULL DEFAULT ${defaultWorkspaceId}`
-    );
-  }
-
-  sqlite.exec(`
     CREATE TABLE IF NOT EXISTS accounts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL UNIQUE,
@@ -119,6 +130,65 @@ function initSqlite(): { db: BetterSQLite3Database<typeof sqliteSchema>; ready: 
   }
   const seedAccount = sqlite.prepare("INSERT OR IGNORE INTO accounts (workspace_id, name) VALUES (?, ?)");
   for (const a of DEFAULT_ACCOUNTS) seedAccount.run(defaultWorkspaceId, a);
+
+  // Transactions reference accounts.id (account names live only in `accounts`).
+  // Legacy installs stored the account name in transactions.account — migrate it.
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS transactions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      workspace_id INTEGER NOT NULL DEFAULT ${defaultWorkspaceId},
+      date TEXT NOT NULL,
+      description TEXT NOT NULL,
+      category TEXT NOT NULL,
+      amount REAL NOT NULL,
+      type TEXT NOT NULL CHECK (type IN ('income', 'expense')),
+      account_id INTEGER NOT NULL REFERENCES accounts(id),
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+  const txCols = () =>
+    (
+      sqlite.prepare("PRAGMA table_info(transactions)").all() as { name: string }[]
+    ).map((c) => c.name);
+  if (!txCols().includes("workspace_id")) {
+    sqlite.exec(
+      `ALTER TABLE transactions ADD COLUMN workspace_id INTEGER NOT NULL DEFAULT ${defaultWorkspaceId}`
+    );
+  }
+  if (!txCols().includes("account_id")) {
+    if (!txCols().includes("account")) {
+      sqlite.exec("ALTER TABLE transactions ADD COLUMN account TEXT NOT NULL DEFAULT 'Cash'");
+    }
+    sqlite.exec("ALTER TABLE transactions ADD COLUMN account_id INTEGER");
+    backfillTransactionAccountIds(sqlite);
+  }
+  if (txCols().includes("account")) {
+    // Drop the legacy name column and enforce the relation (NOT NULL + FK).
+    backfillTransactionAccountIds(sqlite);
+    sqlite.exec(`
+      CREATE TABLE transactions_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        workspace_id INTEGER NOT NULL,
+        date TEXT NOT NULL,
+        description TEXT NOT NULL,
+        category TEXT NOT NULL,
+        amount REAL NOT NULL,
+        type TEXT NOT NULL CHECK (type IN ('income', 'expense')),
+        account_id INTEGER NOT NULL REFERENCES accounts(id),
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+    `);
+    sqlite.exec(`
+      INSERT INTO transactions_new
+        (id, workspace_id, date, description, category, amount, type, account_id, created_at)
+      SELECT t.id, t.workspace_id, t.date, t.description, t.category, t.amount, t.type,
+        COALESCE(t.account_id, c.id), t.created_at
+      FROM transactions t
+      LEFT JOIN accounts c ON c.workspace_id = t.workspace_id AND c.name = 'Cash';
+    `);
+    sqlite.exec("DROP TABLE transactions");
+    sqlite.exec("ALTER TABLE transactions_new RENAME TO transactions");
+  }
 
   const budgetColumns = sqlite.prepare("PRAGMA table_info(budgets)").all() as { name: string }[];
   const hasOldBudgetSchema = budgetColumns.length > 0 && !budgetColumns.some((c) => c.name === "type");
@@ -210,6 +280,68 @@ function initSqlite(): { db: BetterSQLite3Database<typeof sqliteSchema>; ready: 
   return { db: drizzleSqlite(sqlite, { schema: sqliteSchema }), ready: Promise.resolve() };
 }
 
+// Upgrade for installs that stored the account name in transactions.account:
+// add transactions.account_id, point it at the matching accounts rows
+// (blank/unknown names become Cash), then drop the legacy name column.
+async function migratePgTransactions(pool: Pool | PoolClient) {
+  const { rows } = await pool.query(
+    "SELECT column_name FROM information_schema.columns WHERE table_name = 'transactions'"
+  );
+  const cols = new Set(rows.map((r: { column_name: string }) => r.column_name));
+  if (!cols.has("account_id") && cols.has("account")) {
+    await pool.query("ALTER TABLE transactions ADD COLUMN account_id INTEGER");
+  }
+  if (cols.has("account")) {
+    const { rows: ws } = await pool.query("SELECT id FROM workspaces");
+    for (const w of ws) {
+      await pool.query(
+        "INSERT INTO accounts (workspace_id, name) VALUES ($1, 'Cash') ON CONFLICT (workspace_id, name) DO NOTHING",
+        [w.id]
+      );
+      const { rows: names } = await pool.query(
+        "SELECT DISTINCT account FROM transactions WHERE workspace_id = $1",
+        [w.id]
+      );
+      for (const n of names) {
+        const name = (n.account ?? "").trim() || "Cash";
+        await pool.query(
+          "INSERT INTO accounts (workspace_id, name) VALUES ($1, $2) ON CONFLICT (workspace_id, name) DO NOTHING",
+          [w.id, name]
+        );
+      }
+    }
+    await pool.query(
+      `UPDATE transactions SET account_id = a.id FROM accounts a
+       WHERE a.workspace_id = transactions.workspace_id
+         AND a.name = COALESCE(NULLIF(BTRIM(transactions.account), ''), 'Cash')
+         AND transactions.account_id IS NULL`
+    );
+    await pool.query("ALTER TABLE transactions ALTER COLUMN account_id SET NOT NULL");
+    const { rows: fk } = await pool.query(
+      "SELECT 1 FROM pg_constraint WHERE conname = 'transactions_account_id_fkey'"
+    );
+    if (fk.length === 0) {
+      await pool.query(
+        "ALTER TABLE transactions ADD CONSTRAINT transactions_account_id_fkey FOREIGN KEY (account_id) REFERENCES accounts(id)"
+      );
+    }
+    await pool.query("ALTER TABLE transactions DROP COLUMN account");
+  }
+}
+
+// float4 (REAL) loses precision on large IDR amounts — widen to float8.
+async function widenPgAmount(pool: Pool | PoolClient, table: "transactions" | "budgets") {
+  const { rows } = await pool.query(
+    "SELECT udt_name FROM information_schema.columns WHERE table_name = $1 AND column_name = 'amount'",
+    [table]
+  );
+  if (rows[0]?.udt_name === "float4") {
+    await pool.query(
+      `ALTER TABLE ${table} ALTER COLUMN amount TYPE DOUBLE PRECISION USING amount::double precision`
+    );
+  }
+}
+
 function initPg(): { db: NodePgDatabase<typeof pgSchema>; ready: Promise<void> } {
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });
   const db = drizzlePg(pool, { schema: pgSchema });
@@ -223,23 +355,23 @@ function initPg(): { db: NodePgDatabase<typeof pgSchema>; ready: Promise<void> }
         name TEXT NOT NULL UNIQUE,
         created_at TEXT NOT NULL
       );
-      CREATE TABLE IF NOT EXISTS transactions (
-        id SERIAL PRIMARY KEY,
-        workspace_id INTEGER NOT NULL,
-        date TEXT NOT NULL,
-        description TEXT NOT NULL,
-        category TEXT NOT NULL,
-        amount REAL NOT NULL,
-        type TEXT NOT NULL CHECK (type IN ('income', 'expense')),
-        account TEXT NOT NULL,
-        created_at TEXT NOT NULL
-      );
       CREATE TABLE IF NOT EXISTS accounts (
         id SERIAL PRIMARY KEY,
         workspace_id INTEGER NOT NULL,
         name TEXT NOT NULL,
         description TEXT NOT NULL DEFAULT '',
         UNIQUE (workspace_id, name)
+      );
+      CREATE TABLE IF NOT EXISTS transactions (
+        id SERIAL PRIMARY KEY,
+        workspace_id INTEGER NOT NULL,
+        date TEXT NOT NULL,
+        description TEXT NOT NULL,
+        category TEXT NOT NULL,
+        amount DOUBLE PRECISION NOT NULL,
+        type TEXT NOT NULL CHECK (type IN ('income', 'expense')),
+        account_id INTEGER NOT NULL REFERENCES accounts(id),
+        created_at TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS categories (
         id SERIAL PRIMARY KEY,
@@ -254,7 +386,7 @@ function initPg(): { db: NodePgDatabase<typeof pgSchema>; ready: Promise<void> }
         month TEXT NOT NULL,
         category TEXT NOT NULL,
         type TEXT NOT NULL CHECK (type IN ('income', 'expense')),
-        amount REAL NOT NULL,
+        amount DOUBLE PRECISION NOT NULL,
         UNIQUE (workspace_id, month, category, type)
       );
     `);
@@ -276,6 +408,26 @@ function initPg(): { db: NodePgDatabase<typeof pgSchema>; ready: Promise<void> }
         "INSERT INTO categories (workspace_id, name, type) VALUES ($1, $2, $3) ON CONFLICT (workspace_id, name, type) DO NOTHING",
         [defaultWorkspaceId, c.name, c.type]
       );
+    }
+
+    // Serialize across concurrently cold-starting instances (Vercel spins up
+    // several after a deploy) and apply the migration atomically: without the
+    // lock, two instances could race ADD CONSTRAINT — which has no
+    // IF NOT EXISTS — and leave one instance permanently failing its init.
+    // The lock is transaction-scoped, so it is pooler-safe.
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT pg_advisory_xact_lock(hashtext('finance_tracker_migrate'))");
+      await migratePgTransactions(client);
+      await widenPgAmount(client, "transactions");
+      await widenPgAmount(client, "budgets");
+      await client.query("COMMIT");
+    } catch (e) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw e;
+    } finally {
+      client.release();
     }
   })();
 

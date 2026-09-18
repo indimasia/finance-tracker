@@ -38,13 +38,21 @@ export default function AccountManager({
     onChanged();
   }
 
+  const [error, setError] = useState<string | null>(null);
+
   async function remove(n: string) {
-    if (!window.confirm(`Remove account "${n}"? Existing transactions keep it.`)) return;
-    await apiFetch("/api/accounts", {
+    if (!window.confirm(`Remove account "${n}"? This cannot be undone.`)) return;
+    setError(null);
+    const res = await apiFetch("/api/accounts", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: n }),
     });
+    if (!res.ok) {
+      const data = await res.json().catch(() => null);
+      setError(data?.error || "Could not remove account.");
+      return;
+    }
     onChanged();
   }
 
@@ -127,6 +135,8 @@ export default function AccountManager({
             </button>
           </div>
         </form>
+
+        {error && <p className="text-xs text-rose-600 shrink-0">{error}</p>}
 
         <ul className="overflow-y-auto flex-1 divide-y divide-slate-200 dark:divide-slate-800">
           {accounts.map((a) =>
