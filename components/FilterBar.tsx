@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Check, Filter, X } from "lucide-react";
+import { toLocalDateISO } from "@/lib/format";
 
 export type Filters = {
   category: string;
@@ -10,7 +11,7 @@ export type Filters = {
 };
 
 function iso(d: Date) {
-  return d.toISOString().slice(0, 10);
+  return toLocalDateISO(d);
 }
 
 function datePreset(days: number) {

@@ -1,3 +1,5 @@
+import { toLocalDateISO } from "@/lib/format";
+
 export type ImportRow = {
   date: string;
   description: string;
@@ -14,7 +16,9 @@ function normalizeDate(raw: string): string | null {
   if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
   const parsed = new Date(trimmed);
   if (Number.isNaN(parsed.getTime())) return null;
-  return parsed.toISOString().slice(0, 10);
+  // Local components, not toISOString(): UTC serialization shifts the day
+  // backward for timezones ahead of UTC (e.g. Asia/Jakarta).
+  return toLocalDateISO(parsed);
 }
 
 // Accepts loosely-shaped CSV rows (header casing/spacing varies) and returns

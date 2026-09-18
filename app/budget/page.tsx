@@ -3,14 +3,14 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
-import { fmtCurrency } from "@/lib/format";
+import { fmtCurrency, toLocalDateISO } from "@/lib/format";
 import { apiFetch } from "@/lib/apiFetch";
 import { useWorkspace } from "@/components/WorkspaceProvider";
 
 type BudgetRow = { category: string; budget: number; spent: number };
 
 function currentMonth() {
-  return new Date().toISOString().slice(0, 7);
+  return toLocalDateISO(new Date()).slice(0, 7);
 }
 
 function fmtShortDate(iso: string) {

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Plus } from "lucide-react";
 import { apiFetch } from "@/lib/apiFetch";
+import { toLocalDateISO } from "@/lib/format";
 import CategoryInput from "@/components/CategoryInput";
 
 export default function AddTransactionForm({
@@ -20,7 +21,7 @@ export default function AddTransactionForm({
 }) {
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
-    date: new Date().toISOString().slice(0, 10),
+    date: toLocalDateISO(new Date()),
     description: "",
     category: "",
     amount: "",
