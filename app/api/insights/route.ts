@@ -24,7 +24,7 @@ async function generateAiInsights(transactions: Parameters<typeof summarizeForAI
   const completion = await getOpenAI().chat.completions.create({
     model: CHAT_MODEL,
     messages: [{ role: "user", content: buildInsightPrompt(summary) }],
-    max_tokens: 500,
+    max_tokens: 6000,
     temperature: 0.5,
   });
   const text = completion.choices[0]?.message?.content ?? "";

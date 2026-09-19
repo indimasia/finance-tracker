@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle2, Info, Sparkles } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { AlertTriangle, CheckCircle2, Info, RefreshCw, Sparkles } from "lucide-react";
 import { apiFetch } from "@/lib/apiFetch";
 import { useWorkspace } from "@/components/WorkspaceProvider";
 import type { Insight } from "@/lib/insights";
@@ -17,6 +17,20 @@ export default function InsightsPanel({ tick }: { tick: number }) {
   const [insights, setInsights] = useState<Insight[] | null>(null);
   const [periodLabel, setPeriodLabel] = useState("");
   const [source, setSource] = useState<"ai" | "rules">("rules");
+  const [loading, setLoading] = useState(false);
+
+  const fetchInsights = useCallback(() => {
+    setLoading(true);
+    return apiFetch("/api/insights")
+      .then((res) => res.json())
+      .then((data) => {
+        setInsights(data.insights ?? []);
+        setPeriodLabel(data.periodLabel ?? "");
+        setSource(data.source === "ai" ? "ai" : "rules");
+      })
+      .catch(() => setInsights([]))
+      .finally(() => setLoading(false));
+  }, []);
 
   useEffect(() => {
     if (!ready) return;
@@ -49,7 +63,22 @@ export default function InsightsPanel({ tick }: { tick: number }) {
       </div>
     );
   }
-  if (insights.length === 0) return null;
+  if (insights.length === 0) {
+    return (
+      <div className="rounded-xl bg-white dark:bg-slate-900 p-3 sm:p-4 shadow-sm flex items-center justify-between gap-2">
+        <span className="text-sm text-slate-500">No insights yet.</span>
+        <button
+          type="button"
+          onClick={fetchInsights}
+          disabled={loading}
+          className="flex items-center gap-1.5 text-sm font-medium text-blue-600 dark:text-blue-400 disabled:opacity-50"
+        >
+          <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+          Get insight
+        </button>
+      </div>
+    );
+  }
 
   return (
     <section aria-label="Financial insights" className="rounded-xl bg-white dark:bg-slate-900 p-3 sm:p-4 shadow-sm space-y-2.5">
@@ -61,6 +90,15 @@ export default function InsightsPanel({ tick }: { tick: number }) {
             · {source === "ai" ? "AI insight" : "last 3 months"} ({periodLabel}), refreshed daily
           </span>
         )}
+        <button
+          type="button"
+          onClick={fetchInsights}
+          disabled={loading}
+          aria-label="Refresh insights"
+          className="ml-auto text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 disabled:opacity-50"
+        >
+          <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+        </button>
       </h2>
       <ul className="space-y-2">
         {insights.map((insight, i) => {

@@ -150,8 +150,8 @@ export default function Home() {
       </header>
 
       <main className="max-w-3xl mx-auto px-4 sm:px-6 pb-24 space-y-3">
-        <SummaryCards summary={summary} />
         <InsightsPanel tick={dataTick} />
+        <SummaryCards summary={summary} />
 
         <div className="flex flex-wrap items-center gap-2">
           <AddTransactionForm
