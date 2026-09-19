@@ -7,6 +7,7 @@ import { toLocalDateISO } from "@/lib/format";
 import {
   buildInsightPrompt,
   buildInsights,
+  cyclePeriodLabel,
   insightWindow,
   parseAiInsights,
   summarizeForAI,
@@ -51,12 +52,12 @@ export async function GET(req: NextRequest) {
     try {
       const cached = force ? null : await getDailyInsight(workspaceId, today);
       if (cached) {
-        return NextResponse.json({ insights: cached, periodLabel, from, to, source: "ai" });
+        return NextResponse.json({ insights: cached, periodLabel: cyclePeriodLabel(), from, to, source: "ai" });
       }
       const generated = await generateAiInsights(transactions);
       if (generated) {
         await saveDailyInsight(workspaceId, today, generated);
-        return NextResponse.json({ insights: generated, periodLabel, from, to, source: "ai" });
+        return NextResponse.json({ insights: generated, periodLabel: cyclePeriodLabel(), from, to, source: "ai" });
       }
     } catch {
       // Fall through to rules below.

@@ -176,8 +176,33 @@ export function buildInsights(
 }
 
 export function insightWindow(now = new Date()): { from: string; to: string } {
-  const start = new Date(now.getFullYear(), now.getMonth() - 2, 1);
-  return { from: toLocalDateISO(start), to: toLocalDateISO(now) };
+  const calendarStart = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+  const { from: cycleFrom } = cycleWindow(now);
+  const from = calendarStart < new Date(cycleFrom) ? calendarStart : new Date(cycleFrom);
+  return { from: toLocalDateISO(from), to: toLocalDateISO(now) };
+}
+
+// Start (27th) of the budget cycle containing `now` — mirrors currentCycleRange in lib/cycle.ts.
+function currentCycleStart(now: Date): Date {
+  return now.getDate() >= 27
+    ? new Date(now.getFullYear(), now.getMonth(), 27)
+    : new Date(now.getFullYear(), now.getMonth() - 1, 27);
+}
+
+// Trailing 3 budget cycles (27th → 26th each), current cycle included and partial.
+export function cycleWindow(now = new Date()): { from: string; to: string } {
+  const start = currentCycleStart(now);
+  const windowStart = new Date(start.getFullYear(), start.getMonth() - 2, 27);
+  return { from: toLocalDateISO(windowStart), to: toLocalDateISO(now) };
+}
+
+export function cyclePeriodLabel(now = new Date()): string {
+  const start = currentCycleStart(now);
+  const windowStart = new Date(start.getFullYear(), start.getMonth() - 2, 27);
+  const end = new Date(start.getFullYear(), start.getMonth() + 1, 26);
+  const first = windowStart.toLocaleDateString("en-US", { month: "short" });
+  const last = end.toLocaleDateString("en-US", { month: "short" });
+  return `27 ${first} – 26 ${last} ${end.getFullYear()}`;
 }
 
 export type AiSummary = {
@@ -194,8 +219,8 @@ export function summarizeForAI(
   transactions: Pick<Transaction, "date" | "amount" | "type" | "category" | "description">[],
   now = new Date()
 ): AiSummary {
-  const periodLabel = periodLabelFor(now);
-  const { from, to } = insightWindow(now);
+  const periodLabel = cyclePeriodLabel(now);
+  const { from, to } = cycleWindow(now);
   const inWindow = transactions.filter((t) => t.date >= from && t.date <= to);
   const totals = { income: 0, expense: 0 };
   const byMonth = new Map<string, { label: string; income: number; expense: number }>();
@@ -236,7 +261,7 @@ export function summarizeForAI(
 
 export function buildInsightPrompt(summary: AiSummary): string {
   return [
-    "Kamu adalah penasihat keuangan pribadi. Analisis bebas ringkasan pengeluaran 3 bulan ini",
+    "Kamu adalah penasihat keuangan pribadi. Analisis bebas ringkasan pengeluaran 3 siklus anggaran (27–26) ini",
     `(jumlah dalam IDR, periode ${summary.periodLabel}) dan tentukan sendiri apa yang layak disorot —`,
     "tren, risiko, konsentrasi kategori, tingkat tabungan, anomali, apa pun yang terlihat dari angka ini.",
     "Jangan paksakan daftar tetap; tampilkan hanya yang benar-benar menonjol dari data ini.",
