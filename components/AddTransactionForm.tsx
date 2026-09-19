@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Plus } from "lucide-react";
 import { apiFetch } from "@/lib/apiFetch";
 import { toLocalDateISO } from "@/lib/format";
@@ -28,8 +28,17 @@ export default function AddTransactionForm({
     category: "",
     amount: "",
     type: "expense",
-    account: defaultAccount || "Cash",
+    account: defaultAccount,
   });
+
+  const lastDefault = useRef(defaultAccount);
+  useEffect(() => {
+    // The workspace's default account loads async after mount and can arrive
+    // later than the initial "Cash" fallback — resync while the field still
+    // holds the previous default (i.e. the user hasn't picked their own).
+    setForm((f) => (f.account === lastDefault.current ? { ...f, account: defaultAccount } : f));
+    lastDefault.current = defaultAccount;
+  }, [defaultAccount]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();

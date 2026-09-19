@@ -208,10 +208,24 @@ export function cyclePeriodLabel(now = new Date()): string {
 export type AiSummary = {
   periodLabel: string;
   totals: { income: number; expense: number };
-  months: { label: string; income: number; expense: number }[];
+  cycles: { label: string; income: number; expense: number }[];
   topCategories: { category: string; amount: number }[];
   biggestExpenses: { date: string; description: string; amount: number }[];
 };
+
+// Which 27th-26th budget cycle a date falls in — key sorts chronologically,
+// label matches the "27 Mon – 26 Mon" period shown to the user.
+function cycleKeyAndLabel(dateStr: string): { key: string; label: string } {
+  const d = new Date(`${dateStr}T00:00:00`);
+  const start =
+    d.getDate() >= 27
+      ? new Date(d.getFullYear(), d.getMonth(), 27)
+      : new Date(d.getFullYear(), d.getMonth() - 1, 27);
+  const end = new Date(start.getFullYear(), start.getMonth() + 1, 26);
+  const key = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}`;
+  const label = `27 ${start.toLocaleDateString("en-US", { month: "short" })} – 26 ${end.toLocaleDateString("en-US", { month: "short" })}`;
+  return { key, label };
+}
 
 // Compact aggregates fed to the model — summaries only, capped in size, so a
 // prompt stays small no matter how many transactions exist.
@@ -223,24 +237,19 @@ export function summarizeForAI(
   const { from, to } = cycleWindow(now);
   const inWindow = transactions.filter((t) => t.date >= from && t.date <= to);
   const totals = { income: 0, expense: 0 };
-  const byMonth = new Map<string, { label: string; income: number; expense: number }>();
+  const byCycle = new Map<string, { label: string; income: number; expense: number }>();
   const byCategory = new Map<string, number>();
   for (const t of inWindow) {
     if (t.type === "income") totals.income += t.amount;
     else totals.expense += t.amount;
-    const key = t.date.slice(0, 7);
-    const [y, m] = key.split("-").map(Number);
-    const entry = byMonth.get(key) ?? {
-      label: new Date(y, m - 1, 1).toLocaleDateString("en-US", { month: "short" }),
-      income: 0,
-      expense: 0,
-    };
+    const { key, label } = cycleKeyAndLabel(t.date);
+    const entry = byCycle.get(key) ?? { label, income: 0, expense: 0 };
     if (t.type === "income") entry.income += t.amount;
     else {
       entry.expense += t.amount;
       byCategory.set(t.category, (byCategory.get(t.category) ?? 0) + t.amount);
     }
-    byMonth.set(key, entry);
+    byCycle.set(key, entry);
   }
   const biggestExpenses = inWindow
     .filter((t) => t.type === "expense")
@@ -250,7 +259,7 @@ export function summarizeForAI(
   return {
     periodLabel,
     totals,
-    months: [...byMonth.entries()].sort().map(([, v]) => v),
+    cycles: [...byCycle.entries()].sort().map(([, v]) => v),
     topCategories: [...byCategory.entries()]
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5)
