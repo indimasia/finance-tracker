@@ -236,10 +236,12 @@ export function summarizeForAI(
 
 export function buildInsightPrompt(summary: AiSummary): string {
   return [
-    "You are a concise personal finance coach. Analyze this 3-month spending summary",
-    `(amounts in IDR, period ${summary.periodLabel}):`,
+    "You are a personal finance coach. Freely analyze this 3-month spending summary",
+    `(amounts in IDR, period ${summary.periodLabel}) and decide for yourself what's worth flagging —`,
+    "trends, risks, category concentration, savings rate, anomalies, anything the numbers show.",
+    "Don't force a fixed checklist; only surface what's actually notable in this data.",
     JSON.stringify(summary),
-    "Reply with ONLY a JSON array of 3 to 5 objects, each shaped",
+    "Reply with ONLY a JSON array of 1 to 6 objects (however many genuinely matter here), each shaped",
     '{"kind": "good" | "warn" | "info", "title": "max 60 chars", "detail": "max 140 chars, may include IDR amounts"}.',
     "Be specific to these numbers, practical, and upbeat but honest.",
   ].join("\n");
@@ -258,7 +260,7 @@ export function parseAiInsights(text: string): Insight[] | null {
   const kinds: InsightKind[] = ["good", "warn", "info"];
   const out: Insight[] = [];
   for (const item of parsed) {
-    if (out.length >= 5) break;
+    if (out.length >= 6) break;
     if (
       typeof item !== "object" ||
       item === null ||
