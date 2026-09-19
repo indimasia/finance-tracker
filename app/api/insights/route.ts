@@ -39,14 +39,17 @@ export async function GET(req: NextRequest) {
   const { from, to } = insightWindow();
   const transactions = await listTransactions(workspaceId, { from, to });
   const { periodLabel } = buildInsights(transactions);
+  const force = req.nextUrl.searchParams.get("force") === "1";
 
   // AI insight of the day: one model call per workspace per day, cached in
   // the database. Anything missing or failing (no key, bad output, network
   // error) falls back to the deterministic rules — the panel always renders.
+  // `force=1` (manual refresh) skips the cache read but still overwrites it,
+  // so a page reload keeps serving that freshly generated insight.
   if (aiConfigured()) {
     const today = toLocalDateISO(new Date());
     try {
-      const cached = await getDailyInsight(workspaceId, today);
+      const cached = force ? null : await getDailyInsight(workspaceId, today);
       if (cached) {
         return NextResponse.json({ insights: cached, periodLabel, from, to, source: "ai" });
       }

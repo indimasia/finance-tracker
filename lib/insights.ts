@@ -236,14 +236,14 @@ export function summarizeForAI(
 
 export function buildInsightPrompt(summary: AiSummary): string {
   return [
-    "You are a personal finance coach. Freely analyze this 3-month spending summary",
-    `(amounts in IDR, period ${summary.periodLabel}) and decide for yourself what's worth flagging —`,
-    "trends, risks, category concentration, savings rate, anomalies, anything the numbers show.",
-    "Don't force a fixed checklist; only surface what's actually notable in this data.",
+    "Kamu adalah penasihat keuangan pribadi. Analisis bebas ringkasan pengeluaran 3 bulan ini",
+    `(jumlah dalam IDR, periode ${summary.periodLabel}) dan tentukan sendiri apa yang layak disorot —`,
+    "tren, risiko, konsentrasi kategori, tingkat tabungan, anomali, apa pun yang terlihat dari angka ini.",
+    "Jangan paksakan daftar tetap; tampilkan hanya yang benar-benar menonjol dari data ini.",
     JSON.stringify(summary),
-    "Reply with ONLY a JSON array of 1 to 6 objects (however many genuinely matter here), each shaped",
-    '{"kind": "good" | "warn" | "info", "title": "max 60 chars", "detail": "max 140 chars, may include IDR amounts"}.',
-    "Be specific to these numbers, practical, and upbeat but honest.",
+    "Balas HANYA dengan array JSON berisi 1 sampai 6 objek (sesuai yang benar-benar relevan), masing-masing berbentuk",
+    '{"kind": "good" | "warn" | "info", "title": "maks 60 karakter", "detail": "maks 140 karakter, boleh sertakan jumlah IDR"}.',
+    "Gunakan Bahasa Indonesia. Spesifik terhadap angka ini, praktis, dan jujur tapi tetap positif.",
   ].join("\n");
 }
 

@@ -21,7 +21,7 @@ export default function InsightsPanel({ tick }: { tick: number }) {
 
   const fetchInsights = useCallback(() => {
     setLoading(true);
-    return apiFetch("/api/insights")
+    return apiFetch("/api/insights?force=1")
       .then((res) => res.json())
       .then((data) => {
         setInsights(data.insights ?? []);
