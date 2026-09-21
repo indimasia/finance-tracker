@@ -38,7 +38,11 @@ export default function AuthGate({ children }: { children: ReactNode }) {
   }
 
   if (status === "loading") {
-    return <div className="min-h-screen bg-slate-50 dark:bg-slate-950" />;
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
+        <div className="w-8 h-8 rounded-full border-2 border-slate-300 dark:border-slate-700 border-t-slate-900 dark:border-t-slate-100 animate-spin" />
+      </div>
+    );
   }
 
   if (status === "ok") return <>{children}</>;
