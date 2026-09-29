@@ -92,6 +92,7 @@ export async function POST(req: NextRequest) {
     ...messages,
   ];
 
+  let changed = false;
   for (let i = 0; i < 4; i++) {
     const completion = await getOpenAI().chat.completions.create({
       model: CHAT_MODEL,
@@ -103,13 +104,14 @@ export async function POST(req: NextRequest) {
     conversation.push(msg);
 
     if (!msg.tool_calls || msg.tool_calls.length === 0) {
-      return NextResponse.json({ reply: msg.content ?? "" });
+      return NextResponse.json({ reply: msg.content ?? "", changed });
     }
 
     for (const call of msg.tool_calls) {
       if (call.type !== "function") continue;
       const args = call.function.arguments ? JSON.parse(call.function.arguments) : {};
       const result = await runTool(workspaceId, call.function.name, args);
+      if (call.function.name === "add_transaction") changed = true;
       conversation.push({
         role: "tool",
         tool_call_id: call.id,
@@ -118,5 +120,5 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ reply: "Done." });
+  return NextResponse.json({ reply: "Done.", changed });
 }

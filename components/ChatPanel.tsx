@@ -71,7 +71,7 @@ export default function ChatPanel({
       });
       const data = await res.json();
       setMessages([...next, { role: "assistant", content: data.reply || "…" }]);
-      onChanged();
+      if (data.changed) onChanged();
     } catch {
       setMessages([...next, { role: "assistant", content: "Something went wrong." }]);
     } finally {
