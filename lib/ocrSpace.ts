@@ -30,10 +30,11 @@ export function extractOcrText(body: unknown): string {
   return text;
 }
 
-export function buildStructuringPrompt(ocrText: string): string {
+export function buildStructuringPrompt(ocrText: string, categories: string[]): string {
   return `Extract EVERY transaction (line item) from this OCR text of a receipt or financial document.
 Respond with ONLY a JSON array, no prose, in this exact shape:
-[{"date":"YYYY-MM-DD","description":"item or merchant description","category":"one word category like Food, Transport, Shopping, Bills, Health, Entertainment, Other","amount":123.45,"type":"expense"}]
+[{"date":"YYYY-MM-DD","description":"item or merchant description","category":"exactly one of: ${categories.join(", ")}","amount":123.45,"type":"expense"}]
+The category MUST be copied verbatim from that list; pick the closest one.
 One object per purchased item or charge, all sharing the receipt date. Skip subtotal, total, tax-only, and change lines. If a field is missing, make a reasonable guess. Use today's date if none is visible.
 
 OCR text:
@@ -54,6 +55,14 @@ export function parseTransactionList(raw: string): Record<string, unknown>[] {
     if (isRecord(parsed)) return [parsed];
   }
   throw new Error("no transaction JSON found");
+}
+
+// Snaps a model-chosen category onto the workspace's list (case-insensitive),
+// falling back to "Other" (or the first category) when it invented one.
+export function snapCategory(value: unknown, categories: string[]): string {
+  const name = String(value ?? "").trim().toLowerCase();
+  const pick = (n: string) => categories.find((c) => c.toLowerCase() === n);
+  return pick(name) ?? pick("other") ?? categories[0] ?? String(value ?? "");
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {

@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { Camera, X } from "lucide-react";
 import { apiFetch } from "@/lib/apiFetch";
 import CategoryInput from "@/components/CategoryInput";
+import BudgetHint, { clearBudgetCache } from "@/components/BudgetHint";
 
 type Draft = {
   date: string;
@@ -50,7 +51,7 @@ export default function ReceiptUpload({
     setLoading(true);
     try {
       const dataUrl = await fileToDataUrl(file);
-      const res = await fetch("/api/ocr", {
+      const res = await apiFetch("/api/ocr", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ image: dataUrl }),
@@ -93,6 +94,7 @@ export default function ReceiptUpload({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Save failed");
       if (data.rejected > 0) throw new Error(`${data.rejected} item(s) rejected — check the list`);
+      clearBudgetCache();
       setDrafts([]);
       onSaved();
     } catch (e) {
@@ -185,6 +187,7 @@ export default function ReceiptUpload({
                   className="flex-1 min-w-[8rem] rounded-md border border-slate-300 dark:border-slate-700 bg-transparent px-2 py-1 tabular-nums"
                   aria-label={`Item ${i + 1} amount`}
                 />
+                <BudgetHint date={draft.date} type={draft.type} category={draft.category} amount={draft.amount} />
               </div>
               <CategoryInput
                 value={draft.account ?? defaultAccount}

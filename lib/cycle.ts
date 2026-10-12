@@ -12,3 +12,11 @@ export function currentCycleRange(now = new Date()): { from: string; to: string 
   const end = new Date(start.getFullYear(), start.getMonth() + 1, 26);
   return { from: toLocalDateISO(start), to: toLocalDateISO(end) };
 }
+
+// Budget month key ("YYYY-MM") whose 27–26 cycle contains `date` (YYYY-MM-DD).
+export function cycleMonthOf(date: string): string | null {
+  const m = date.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return null;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1 + (Number(m[3]) >= 27 ? 1 : 0), 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}

@@ -5,6 +5,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { apiFetch } from "@/lib/apiFetch";
 import { toLocalDateISO } from "@/lib/format";
 import CategoryInput from "@/components/CategoryInput";
+import BudgetHint, { clearBudgetCache } from "@/components/BudgetHint";
 
 type Row = {
   date: string;
@@ -70,6 +71,7 @@ export default function AddTransactionForm({
       body: JSON.stringify({ transactions }),
     });
     setSaving(false);
+    clearBudgetCache();
     setRows([]);
     onToggle();
     onAdd();
@@ -94,6 +96,7 @@ export default function AddTransactionForm({
       body: JSON.stringify(form),
     });
     setSaving(false);
+    clearBudgetCache();
     setForm({ ...form, description: "", category: "", amount: "" });
     onToggle();
     onAdd();
@@ -188,6 +191,7 @@ export default function AddTransactionForm({
               >
                 <Trash2 size={14} />
               </button>
+              <BudgetHint date={row.date} type={row.type} category={row.category} amount={row.amount} />
             </div>
           ))}
           <div className="flex gap-2 justify-between">
@@ -257,6 +261,7 @@ export default function AddTransactionForm({
           onChange={(e) => setForm({ ...form, amount: e.target.value })}
           className="flex-1 min-w-[8rem] rounded-md border border-slate-300 dark:border-slate-700 bg-transparent px-2 py-1.5 text-sm tabular-nums"
         />
+        <BudgetHint date={form.date} type={form.type} category={form.category} amount={form.amount} />
       </div>
       <CategoryInput
         value={form.account}

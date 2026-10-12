@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getOpenAI, CHAT_MODEL } from "@/lib/openai";
 import { requireAuth } from "@/lib/auth";
+import { getWorkspaceId } from "@/lib/workspace";
+import { listCategories } from "@/lib/db";
 import {
   buildStructuringPrompt,
   ocrSpaceKey,
   parseOcrSpace,
   parseTransactionList,
+  snapCategory,
 } from "@/lib/ocrSpace";
 
 export async function POST(req: NextRequest) {
@@ -29,14 +32,23 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "could not read receipt" }, { status: 422 });
   }
 
+  const workspaceId = await getWorkspaceId(req);
+  const [expense, income] = await Promise.all([
+    listCategories(workspaceId, "expense"),
+    listCategories(workspaceId, "income"),
+  ]);
+
   const completion = await getOpenAI().chat.completions.create({
     model: CHAT_MODEL,
-    messages: [{ role: "user", content: buildStructuringPrompt(ocrText) }],
+    messages: [{ role: "user", content: buildStructuringPrompt(ocrText, expense) }],
   });
 
   const raw = completion.choices[0].message.content ?? "[]";
   try {
-    const transactions = parseTransactionList(raw);
+    const transactions = parseTransactionList(raw).map((t) => ({
+      ...t,
+      category: snapCategory(t.category, t.type === "income" ? income : expense),
+    }));
     if (transactions.length === 0) throw new Error("no items found");
     return NextResponse.json({ transactions });
   } catch {
