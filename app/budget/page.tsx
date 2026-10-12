@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Check } from "lucide-react";
 import { fmtCurrency, toLocalDateISO } from "@/lib/format";
 import { apiFetch } from "@/lib/apiFetch";
 import { useWorkspace } from "@/components/WorkspaceProvider";
+import { clearBudgetCache } from "@/components/BudgetHint";
 
 type BudgetRow = { category: string; budget: number; spent: number };
 
@@ -52,12 +53,18 @@ export default function BudgetPage() {
   }, [load, ready, workspaceId]);
 
   async function saveBudget(category: string, amount: number) {
-    await apiFetch("/api/budgets", {
+    const res = await apiFetch("/api/budgets", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ month, category, type, amount }),
     });
-    load();
+    if (!res.ok) return false;
+    clearBudgetCache();
+    // Patch only the edited row so the rest of the list doesn't reload/flash.
+    const data: { budgets: BudgetRow[] } = await res.json();
+    const updated = data.budgets.find((r) => r.category === category) ?? { category, budget: amount, spent: 0 };
+    setRows((prev) => [...prev.filter((r) => r.category !== category), updated]);
+    return true;
   }
 
   const displayCategories = Array.from(
@@ -140,54 +147,114 @@ export default function BudgetPage() {
               const row = rows.find((r) => r.category === category);
               const budget = row?.budget ?? 0;
               const spent = row?.spent ?? 0;
-              const pctRaw = budget > 0 ? (spent / budget) * 100 : 0;
-              const pct = Math.min(100, Math.round(pctRaw));
-
-              // Expense budgets warn as spend approaches/exceeds the limit;
-              // income has no "over" risk, so it stays neutral.
-              const isDanger = type === "expense" && pctRaw >= 100;
-              const isWarning = type === "expense" && pctRaw >= 90 && pctRaw < 100;
-              const barColor = isDanger ? "bg-rose-500" : isWarning ? "bg-orange-500" : "bg-emerald-500";
-              const textColor = isDanger
-                ? "text-rose-600"
-                : isWarning
-                  ? "text-orange-600"
-                  : "text-slate-500";
-
               return (
-                <div key={category} className="space-y-1.5">
-                  <div className="flex items-center justify-between text-sm gap-2">
-                    <span className="truncate font-medium">{category}</span>
-                    <input
-                      type="number"
-                      step="0.01"
-                      defaultValue={budget || ""}
-                      placeholder="0"
-                      onBlur={(e) => saveBudget(category, Number(e.target.value) || 0)}
-                      className="w-32 rounded-md border border-slate-300 dark:border-slate-700 bg-transparent px-2 py-1.5 text-sm text-right tabular-nums"
-                    />
-                  </div>
-                  {budget > 0 ? (
-                    <>
-                      <div className="h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                        <div className={"h-full rounded-full " + barColor} style={{ width: `${pct}%` }} />
-                      </div>
-                      <p className={"text-xs " + textColor}>
-                        {fmtCurrency(spent)} of {fmtCurrency(budget)}
-                        {isDanger && " — over budget"}
-                        {isWarning && " — near budget"}
-                      </p>
-                    </>
-                  ) : (
-                    <p className="text-xs text-slate-500">
-                      {fmtCurrency(spent)} {type === "expense" ? "spent" : "received"} · no budget set
-                    </p>
-                  )}
-                </div>
+                <BudgetRowItem
+                  key={`${month}-${type}-${category}`}
+                  category={category}
+                  budget={budget}
+                  spent={spent}
+                  type={type}
+                  onSave={saveBudget}
+                />
               );
             })}
         </div>
       </main>
+    </div>
+  );
+}
+
+function BudgetRowItem({
+  category,
+  budget,
+  spent,
+  type,
+  onSave,
+}: {
+  category: string;
+  budget: number;
+  spent: number;
+  type: "expense" | "income";
+  onSave: (category: string, amount: number) => Promise<boolean>;
+}) {
+  const [draft, setDraft] = useState(budget ? String(budget) : "");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const dirty = (Number(draft) || 0) !== budget;
+
+  async function save() {
+    setSaving(true);
+    const ok = await onSave(category, Number(draft) || 0);
+    setSaving(false);
+    if (ok) {
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1500);
+    }
+  }
+
+  const pctRaw = budget > 0 ? (spent / budget) * 100 : 0;
+  const pct = Math.min(100, Math.round(pctRaw));
+  // Expense budgets warn as spend approaches/exceeds the limit;
+  // income has no "over" risk, so it stays neutral.
+  const isDanger = type === "expense" && pctRaw >= 100;
+  const isWarning = type === "expense" && pctRaw >= 90 && pctRaw < 100;
+  const barColor = isDanger ? "bg-rose-500" : isWarning ? "bg-orange-500" : "bg-emerald-500";
+  const textColor = isDanger ? "text-rose-600" : isWarning ? "text-orange-600" : "text-slate-500";
+
+  return (
+    <div className="space-y-1.5">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (dirty && !saving) save();
+        }}
+        className="flex items-center justify-between text-sm gap-2"
+      >
+        <span className="truncate font-medium">{category}</span>
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            step="0.01"
+            inputMode="decimal"
+            value={draft}
+            placeholder="0"
+            onChange={(e) => setDraft(e.target.value)}
+            aria-label={`${category} budget`}
+            className="w-32 rounded-md border border-slate-300 dark:border-slate-700 bg-transparent px-2 py-1.5 text-sm text-right tabular-nums"
+          />
+          {dirty ? (
+            <button
+              type="submit"
+              disabled={saving}
+              className="rounded-md px-3 py-1.5 text-sm bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 disabled:opacity-50"
+            >
+              {saving ? "Saving…" : "Set"}
+            </button>
+          ) : saved ? (
+            <span className="inline-flex items-center gap-1 text-xs text-emerald-600 w-14">
+              <Check size={14} /> Saved
+            </span>
+          ) : (
+            <span className="w-14" aria-hidden />
+          )}
+        </div>
+      </form>
+      {budget > 0 ? (
+        <>
+          <div className="h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+            <div className={"h-full rounded-full transition-all " + barColor} style={{ width: `${pct}%` }} />
+          </div>
+          <p className={"text-xs " + textColor}>
+            {fmtCurrency(spent)} of {fmtCurrency(budget)}
+            {isDanger && " — over budget"}
+            {isWarning && " — near budget"}
+          </p>
+        </>
+      ) : (
+        <p className="text-xs text-slate-500">
+          {fmtCurrency(spent)} {type === "expense" ? "spent" : "received"} · no budget set
+        </p>
+      )}
     </div>
   );
 }
