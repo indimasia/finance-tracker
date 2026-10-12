@@ -9,6 +9,15 @@ import { useWorkspace } from "@/components/WorkspaceProvider";
 import { clearBudgetCache } from "@/components/BudgetHint";
 
 type BudgetRow = { category: string; budget: number; spent: number };
+type SortKey = "name" | "budget" | "spent" | "used";
+
+const SORTS: Record<SortKey, { label: string; value: (r: BudgetRow) => number }> = {
+  name: { label: "Name", value: () => 0 },
+  budget: { label: "Budget", value: (r) => r.budget },
+  spent: { label: "Spent", value: (r) => r.spent },
+  // no budget sorts last; spending without a budget counts as fully used past everything
+  used: { label: "% used", value: (r) => (r.budget > 0 ? r.spent / r.budget : r.spent > 0 ? Infinity : -1) },
+};
 
 function currentMonth() {
   return toLocalDateISO(new Date()).slice(0, 7);
@@ -29,6 +38,7 @@ export default function BudgetPage() {
     expense: [],
   });
   const [loading, setLoading] = useState(false);
+  const [sort, setSort] = useState<SortKey>("name");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -67,9 +77,11 @@ export default function BudgetPage() {
     return true;
   }
 
-  const displayCategories = Array.from(
-    new Set([...categories[type], ...rows.map((r) => r.category)])
-  ).sort();
+  // sort by value desc; ties, NaN (Infinity - Infinity) and "name" stay alphabetical (stable sort)
+  const displayRows = Array.from(new Set([...categories[type], ...rows.map((r) => r.category)]))
+    .sort()
+    .map((category) => rows.find((r) => r.category === category) ?? { category, budget: 0, spent: 0 })
+    .sort((a, b) => SORTS[sort].value(b) - SORTS[sort].value(a) || 0);
 
   const totalBudget = rows.reduce((s, r) => s + r.budget, 0);
   const totalSpent = rows.reduce((s, r) => s + r.spent, 0);
@@ -124,6 +136,20 @@ export default function BudgetPage() {
               Income
             </button>
           </div>
+          <label className="flex items-center gap-2 text-sm sm:ml-auto">
+            <span className="text-slate-500">Sort</span>
+            <select
+              value={sort}
+              onChange={(e) => setSort(e.target.value as SortKey)}
+              className="rounded-md border border-slate-300 dark:border-slate-700 bg-transparent px-3 py-2 text-sm"
+            >
+              {(Object.keys(SORTS) as SortKey[]).map((k) => (
+                <option key={k} value={k}>
+                  {k === "spent" && type === "income" ? "Received" : SORTS[k].label}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
 
         <div className="rounded-xl bg-white dark:bg-slate-900 p-3 sm:p-4 shadow-sm flex items-center justify-between">
@@ -139,14 +165,11 @@ export default function BudgetPage() {
 
         <div className="rounded-xl bg-white dark:bg-slate-900 p-3 sm:p-4 shadow-sm space-y-4">
           {loading && <p className="text-xs text-slate-500">Loading…</p>}
-          {!loading && displayCategories.length === 0 && (
+          {!loading && displayRows.length === 0 && (
             <p className="text-xs text-slate-500">No {type} categories yet.</p>
           )}
           {!loading &&
-            displayCategories.map((category) => {
-              const row = rows.find((r) => r.category === category);
-              const budget = row?.budget ?? 0;
-              const spent = row?.spent ?? 0;
+            displayRows.map(({ category, budget, spent }) => {
               return (
                 <BudgetRowItem
                   key={`${month}-${type}-${category}`}

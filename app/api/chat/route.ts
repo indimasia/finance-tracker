@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getOpenAI, CHAT_MODEL } from "@/lib/openai";
-import { addTransaction, getWorkspaceDefaultAccount, listTransactions, summarize } from "@/lib/db";
+import { addTransaction, budgetCyclePeriod, getWorkspaceDefaultAccount, listBudgets, listTransactions, summarize } from "@/lib/db";
+import { cycleMonthOf } from "@/lib/cycle";
+import { toLocalDateISO } from "@/lib/format";
 import { getWorkspaceId } from "@/lib/workspace";
 import type { ChatCompletionMessageParam, ChatCompletionTool } from "openai/resources/index";
 import { requireAuth } from "@/lib/auth";
@@ -48,6 +50,21 @@ const tools: ChatCompletionTool[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "get_budgets",
+      description:
+        "Get budget vs. actual per category for a budget cycle (27th of previous month to 26th of `month`). Rows with budget 0 have no budget set.",
+      parameters: {
+        type: "object",
+        properties: {
+          month: { type: "string", description: "YYYY-MM cycle month, defaults to the current cycle" },
+          type: { type: "string", enum: ["income", "expense"], description: "defaults to expense" },
+        },
+      },
+    },
+  },
 ];
 
 async function runTool(workspaceId: number, name: string, args: Record<string, unknown>) {
@@ -70,13 +87,22 @@ async function runTool(workspaceId: number, name: string, args: Record<string, u
       const limit = typeof args.limit === "number" ? args.limit : 20;
       return listTransactions(workspaceId, { limit });
     }
+    case "get_budgets": {
+      const month =
+        typeof args.month === "string" && /^\d{4}-\d{2}$/.test(args.month)
+          ? args.month
+          : cycleMonthOf(toLocalDateISO(new Date()))!;
+      const type = args.type === "income" ? "income" : "expense";
+      return { month, type, period: budgetCyclePeriod(month), budgets: await listBudgets(workspaceId, month, type) };
+    }
     default:
       return { error: "unknown tool" };
   }
 }
 
-const SYSTEM_PROMPT = `You are a concise personal finance assistant embedded in a tracker app.
-Use the provided tools to add transactions or answer questions about the user's finances.
+const systemPrompt = () => `You are a concise personal finance assistant embedded in a tracker app.
+Use the provided tools to add transactions or answer questions about the user's finances, including budgets.
+Today is ${toLocalDateISO(new Date())}.
 When adding a transaction from natural language, infer reasonable category and today's date if not given.
 Keep replies short.`;
 
@@ -88,7 +114,7 @@ export async function POST(req: NextRequest) {
   const { messages } = (await req.json()) as { messages: ChatCompletionMessageParam[] };
 
   const conversation: ChatCompletionMessageParam[] = [
-    { role: "system", content: SYSTEM_PROMPT },
+    { role: "system", content: systemPrompt() },
     ...messages,
   ];
 
