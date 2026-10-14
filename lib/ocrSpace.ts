@@ -30,12 +30,12 @@ export function extractOcrText(body: unknown): string {
   return text;
 }
 
-export function buildStructuringPrompt(ocrText: string, categories: string[]): string {
+export function buildStructuringPrompt(ocrText: string, categories: string[], today: string): string {
   return `Extract EVERY transaction (line item) from this OCR text of a receipt or financial document.
 Respond with ONLY a JSON array, no prose, in this exact shape:
 [{"date":"YYYY-MM-DD","description":"item or merchant description","category":"exactly one of: ${categories.join(", ")}","amount":123.45,"type":"expense"}]
 The category MUST be copied verbatim from that list; pick the closest one.
-One object per purchased item or charge, all sharing the receipt date. Skip subtotal, total, tax-only, and change lines. If a field is missing, make a reasonable guess. Use today's date if none is visible.
+One object per purchased item or charge, all sharing the receipt date. Skip subtotal, total, tax-only, and change lines. If a field is missing, make a reasonable guess. Today is ${today}; use it if no date is visible.
 
 OCR text:
 ${ocrText}`;

@@ -3,6 +3,7 @@ import { getOpenAI, CHAT_MODEL } from "@/lib/openai";
 import { requireAuth } from "@/lib/auth";
 import { getWorkspaceId } from "@/lib/workspace";
 import { listCategories } from "@/lib/db";
+import { toLocalDateISO } from "@/lib/format";
 import {
   buildStructuringPrompt,
   ocrSpaceKey,
@@ -38,17 +39,25 @@ export async function POST(req: NextRequest) {
     listCategories(workspaceId, "income"),
   ]);
 
+  const today = toLocalDateISO(new Date());
   const completion = await getOpenAI().chat.completions.create({
     model: CHAT_MODEL,
-    messages: [{ role: "user", content: buildStructuringPrompt(ocrText, expense) }],
+    messages: [{ role: "user", content: buildStructuringPrompt(ocrText, expense, today) }],
   });
 
   const raw = completion.choices[0].message.content ?? "[]";
   try {
-    const transactions = parseTransactionList(raw).map((t) => ({
-      ...t,
-      category: snapCategory(t.category, t.type === "income" ? income : expense),
-    }));
+    const transactions = parseTransactionList(raw).map((t) => {
+      // Drafts feed BudgetHint/select, which need exact "income"|"expense" and ISO dates.
+      const type = String(t.type ?? "").trim().toLowerCase() === "income" ? "income" : "expense";
+      const date = String(t.date ?? "").trim();
+      return {
+        ...t,
+        type,
+        date: /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : today,
+        category: snapCategory(t.category, type === "income" ? income : expense),
+      };
+    });
     if (transactions.length === 0) throw new Error("no items found");
     return NextResponse.json({ transactions });
   } catch {
